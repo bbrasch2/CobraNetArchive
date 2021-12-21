@@ -2,15 +2,16 @@
 using Revise
 
 using Statistics
+using Plots
 
 using Tiger
 using JuMP, Gurobi
-using Flux
+using Flux, CUDA
 
 GENE_UB = 1000
 EX_UB = 100 # from CDM.toml
 
-cobra = read_cobra("/Users/jensen/Dropbox/repos/COBRA_models/iSMU.mat", "iSMU")
+cobra = read_cobra("iSMU.mat", "iSMU")
 cobra.lb[cobra.lb .> 0.0] .= 0.0  # remove NGAM
 cobra = extend_cobra_cnf(cobra, ub=GENE_UB)
 set_media_bounds!(cobra, "CDM.toml")
@@ -97,9 +98,14 @@ function make_sample_random(n, model, binvars, convars)
     return binvals, convals
 end
 
-Xb, Xc = make_sample_random(10, model, binvars, convars)
-y = oracle(Xb, Xc)
+#Xb, Xc = make_sample_random(10, model, binvars, convars)
+#y = oracle(Xb, Xc)
 
+function plot_test_train(epoch, test_mean, test_max, train_mean, train_max)
+    p_train = plot(1:epoch, hcat(train_mean[1:epoch], train_max[1:epoch]), plot_title="train", ylim=(0,1), legend=false)
+    p_test = plot([1:epoch], hcat(test_mean[1:epoch], test_max[1:epoch]), plot_title="test", ylim=(0,1), legend=false)
+    display(plot!(p_train, p_test, plot_title=""))
+end
 
 ntotal = nbin + ncon
 NEURONS = 512
@@ -109,10 +115,10 @@ nn = Chain(
     Dense(NEURONS, NEURONS, relu),
     Dense(NEURONS, NEURONS, relu),
     Dense(NEURONS, 1, relu)
-)
+) |> gpu
 
 function mean_max_loss(nn, Xb, Xc, y)
-    yhat = nn(vcat(Xb, Xc))
+    yhat = nn(vcat(Xb, Xc) |> gpu) |> cpu
     return mean(abs.(yhat .- y)), maximum(abs.(yhat .- y))
 end
 
@@ -120,28 +126,43 @@ end
 loss(X, y) = sum((nn(X) .- y).^2)
 
 ps = params(nn)
-opt = Descent(0.001)
+#opt = Descent(0.01)
+opt = ADAM(0.01)
 
 n_samples = 1000
 n_epoch = 10
+
+test_mean = zeros(n_epoch)
+test_max = zeros(n_epoch)
+train_mean = zeros(n_epoch)
+train_max = zeros(n_epoch)
+
+plot_test_train(1, test_mean, test_max, train_mean, train_max)
+
 for epoch = 1:n_epoch
     Xb, Xc = make_sample_random(n_samples, model, binvars, convars)
     y = oracle(Xb, Xc)
-    X = vcat(Xb, Xc)
 
     println("Epoch ", epoch)
-    println("    Test: ", mean_max_loss(nn, Xb, Xc, y))
+    test_mean[epoch], test_max[epoch] = mean_max_loss(nn, Xb, Xc, y)
 
-    for i = 1:n_samples
-        gs = gradient(ps) do
-            loss(X[:,i], y[i])
-        end
-        Flux.Optimise.update!(opt, ps, gs)
-    end
+    X = vcat(Xb, Xc) |> gpu
+    data = Flux.DataLoader((X, vcat(y) |> gpu))
+
+    Flux.train!(loss, ps, data, opt)
+
+    # for i = 1:n_samples
+    #     gs = gradient(ps) do
+    #         loss(X[:,i], y[i])
+    #     end
+    #     Flux.Optimise.update!(opt, ps, gs)
+    # end
 
     # error reporting
-    println("   Train: ", mean_max_loss(nn, Xb, Xc, y))
+    train_mean[epoch], train_max[epoch] = mean_max_loss(nn, Xb, Xc, y)
+    plot_test_train(epoch, test_mean, test_max, train_mean, train_max)
 end
+
 
 
 
