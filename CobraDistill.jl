@@ -1,8 +1,9 @@
 
 using Revise
 
-using Statistics
+using Statistics, DataFrames
 using Plots
+using JLD
 
 using Tiger
 using JuMP, Gurobi
@@ -53,25 +54,26 @@ function build_oracle(model, binvars, convars; bin_ub=1.0, con_ub=1.0, normalize
         convars = reference_map[convars]
     end
 
+    vars = vcat(binvars, convars)
+    ub = vcat(bin_ub .* ones(length(binvars)), con_ub .* ones(length(convars)))
+
     if silent
         set_silent(model)
     end
 
     if normalize
-        set_upper_bound.(binvars, bin_ub)
-        set_upper_bound.(convars, con_ub)
+        set_upper_bound.(vars, ub)
         optimize!(model)
         max_objval = objective_value(model)
     else
         max_objval = 1.0
     end
 
-    function run_model(binvals, convals)
-        n = size(binvals, 2)
+    function run_model(X)
+        n = size(X, 2)
         output = zeros(n)
         for i = 1:n
-            set_upper_bound.(binvars, bin_ub .* binvals[:,i])
-            set_upper_bound.(convars, con_ub .* convals[:,i])
+            set_upper_bound.(vars, ub .* X[:,i])
             optimize!(model)
             output[i] = objective_value(model) / max_objval
         end
@@ -95,17 +97,23 @@ function make_sample_random(n, model, binvars, convars)
 
     convals = rand(ncon, n)
 
-    return binvals, convals
+    return vcat(binvals, convals)
 end
-
-#Xb, Xc = make_sample_random(10, model, binvars, convars)
-#y = oracle(Xb, Xc)
 
 function plot_test_train(epoch, test_mean, test_max, train_mean, train_max)
     p_train = plot(1:epoch, hcat(train_mean[1:epoch], train_max[1:epoch]), plot_title="train", ylim=(0,1), legend=false)
     p_test = plot([1:epoch], hcat(test_mean[1:epoch], test_max[1:epoch]), plot_title="test", ylim=(0,1), legend=false)
     display(plot!(p_train, p_test, plot_title=""))
 end
+
+hyper = (
+    n_epochs = 1000,
+    n_samples = 10000,
+    batch_size = 1,
+    learning_rate = 0.01,
+    save_every = 10,
+    save_prefix = "bce_"
+)
 
 ntotal = nbin + ncon
 NEURONS = 512
@@ -114,53 +122,59 @@ nn = Chain(
     Dense(1024, NEURONS, relu),
     Dense(NEURONS, NEURONS, relu),
     Dense(NEURONS, NEURONS, relu),
-    Dense(NEURONS, 1, relu)
-) |> gpu
+    Dense(NEURONS, 1, σ)
+)
 
-function mean_max_loss(nn, Xb, Xc, y)
-    yhat = nn(vcat(Xb, Xc) |> gpu) |> cpu
-    return mean(abs.(yhat .- y)), maximum(abs.(yhat .- y))
+function update_stats!(stats, epoch, nn, X, y; test=false)
+    if test
+        mean_col = stats.test_mean
+        max_col = stats.test_max
+    else
+        mean_col = stats.train_mean
+        max_col = stats.train_max
+    end
+
+    yhat = nn(X)
+    mean_col[epoch] = mean(abs.(yhat .- y))
+    max_col[epoch] = maximum(abs.(yhat .- y))
 end
 
 # training loop
-loss(X, y) = sum((nn(X) .- y).^2)
+#loss(X, y) = sum((nn(X) .- y).^2)
+loss(X, y) = Flux.Losses.crossentropy(nn(X), y)
 
 ps = params(nn)
 #opt = Descent(0.01)
-opt = ADAM(0.01)
+opt = ADAM(hyper.learning_rate)
 
-n_samples = 1000
-n_epoch = 10
+n_samples = hyper.n_samples
+n_epochs = hyper.n_epochs
 
-test_mean = zeros(n_epoch)
-test_max = zeros(n_epoch)
-train_mean = zeros(n_epoch)
-train_max = zeros(n_epoch)
+stats = DataFrame(
+    epoch = 1:n_epochs,
+    test_mean = zeros(n_epochs),
+    test_max = zeros(n_epochs),
+    train_mean = zeros(n_epochs),
+    train_max = zeros(n_epochs)
+)
 
-plot_test_train(1, test_mean, test_max, train_mean, train_max)
-
-for epoch = 1:n_epoch
-    Xb, Xc = make_sample_random(n_samples, model, binvars, convars)
-    y = oracle(Xb, Xc)
+for epoch = 1:n_epochs
+    X = make_sample_random(n_samples, model, binvars, convars)
+    y = oracle(X)
 
     println("Epoch ", epoch)
-    test_mean[epoch], test_max[epoch] = mean_max_loss(nn, Xb, Xc, y)
+    update_stats!(stats, epoch, nn, X, y, test=true)
 
-    X = vcat(Xb, Xc) |> gpu
-    data = Flux.DataLoader((X, vcat(y) |> gpu))
-
+    data = Flux.DataLoader((X, vcat(y)), batchsize=hyper.batch_size)
     Flux.train!(loss, ps, data, opt)
 
-    # for i = 1:n_samples
-    #     gs = gradient(ps) do
-    #         loss(X[:,i], y[i])
-    #     end
-    #     Flux.Optimise.update!(opt, ps, gs)
-    # end
+    update_stats!(stats, epoch, nn, X, y, test=false)
 
-    # error reporting
-    train_mean[epoch], train_max[epoch] = mean_max_loss(nn, Xb, Xc, y)
-    plot_test_train(epoch, test_mean, test_max, train_mean, train_max)
+    if epoch % hyper.save_every == 0
+        save(hyper.save_prefix * string(epoch) * ".jld",
+            "stats", stats, "nn", nn)
+    end
+
 end
 
 
