@@ -12,6 +12,12 @@ function plot_test_train(stats; epoch=0)
     display(plot!(p_train, p_test, plot_title=""))
 end
 
-epoch = 280
-stats = load("saved" * string(epoch) * ".jld", "stats")
+epoch = 100
+file = "train10_" * string(epoch) * ".jld"
+stats = load(file, "stats")
 plot_test_train(stats; epoch)
+
+ŷ = load(file, "ŷ")
+y = load(file, "y")
+I = sortperm(y)
+plot(1:length(y), hcat(y[I], ŷ[I]), label=["y" "ŷ"], legend=:bottomright)

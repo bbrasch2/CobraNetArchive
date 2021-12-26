@@ -107,25 +107,30 @@ function plot_test_train(epoch, test_mean, test_max, train_mean, train_max)
 end
 
 hyper = (
-    n_epochs = 1000,
+    n_epochs = 100,
     n_samples = 10000,
-    batch_size = 1,
-    learning_rate = 0.01,
-    save_every = 10,
-    save_prefix = "bce_"
+    batch_size = 32,
+
+    optimizer = ADAM,
+    learning_rate = 1e-10,
+
+    loss = Flux.Losses.crossentropy,
+
+    save_every = 100,
+    save_prefix = "train10_"
 )
 
 ntotal = nbin + ncon
 NEURONS = 512
 nn = Chain(
-    Dense(ntotal, 1024, relu),
-    Dense(1024, NEURONS, relu),
-    Dense(NEURONS, NEURONS, relu),
-    Dense(NEURONS, NEURONS, relu),
-    Dense(NEURONS, 1, σ)
+    Dense(ntotal, 1024, elu),
+    #Dense(1024, 512, elu),
+    Dense(1024, 256, elu),
+    Dense(256, 128, elu),
+    Dense(128, 1, σ)
 )
 
-function update_stats!(stats, epoch, nn, X, y; test=false)
+function update_stats!(stats, epoch, ŷ, y; test=false)
     if test
         mean_col = stats.test_mean
         max_col = stats.test_max
@@ -134,18 +139,15 @@ function update_stats!(stats, epoch, nn, X, y; test=false)
         max_col = stats.train_max
     end
 
-    yhat = nn(X)
-    mean_col[epoch] = mean(abs.(yhat .- y))
-    max_col[epoch] = maximum(abs.(yhat .- y))
+    mean_col[epoch] = mean(abs.(ŷ .- y))
+    max_col[epoch] = maximum(abs.(ŷ .- y))
 end
 
 # training loop
-#loss(X, y) = sum((nn(X) .- y).^2)
-loss(X, y) = Flux.Losses.crossentropy(nn(X), y)
+loss(X, y) = hyper.loss(nn(X), y)
 
 ps = params(nn)
-#opt = Descent(0.01)
-opt = ADAM(hyper.learning_rate)
+opt = hyper.optimizer(hyper.learning_rate)
 
 n_samples = hyper.n_samples
 n_epochs = hyper.n_epochs
@@ -158,21 +160,21 @@ stats = DataFrame(
     train_max = zeros(n_epochs)
 )
 
+X = make_sample_random(n_samples, model, binvars, convars)
+y = oracle(X)
 for epoch = 1:n_epochs
-    X = make_sample_random(n_samples, model, binvars, convars)
-    y = oracle(X)
-
     println("Epoch ", epoch)
-    update_stats!(stats, epoch, nn, X, y, test=true)
+    update_stats!(stats, epoch, nn(X), y, test=true)
 
     data = Flux.DataLoader((X, vcat(y)), batchsize=hyper.batch_size)
     Flux.train!(loss, ps, data, opt)
 
-    update_stats!(stats, epoch, nn, X, y, test=false)
+    ŷ = nn(X)
+    update_stats!(stats, epoch, ŷ, y, test=false)
 
     if epoch % hyper.save_every == 0
         save(hyper.save_prefix * string(epoch) * ".jld",
-            "stats", stats, "nn", nn)
+            "stats", stats, "nn", nn, "ŷ", ŷ, "y", y)
     end
 
 end
