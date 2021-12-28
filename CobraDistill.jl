@@ -16,20 +16,20 @@ hyper = (
     #loss = Flux.Losses.crossentropy,
     loss = Flux.Losses.mse,
 
-    n_epochs = 10,
-    n_samples = 100,
-    n_test = 100,
+    n_epochs = 1000,
+    n_samples = 5000,
+    n_test = 1000,
     batch_size = 1,
-    replace_fraction = 0.0,
+    replace_fraction = 0.1,
 
     optimizer = Descent,
-    learning_rate = 1e-4,
-    l1_regularization = 1e-5,
-    l2_regularization = 1e-5,
+    learning_rate = 1e-5,
+    l1_regularization = 1e-6,
+    l2_regularization = 1e-6,
 
-    test_every = 3,
-    save_every = 3,  # must be a multiple of test_every
-    rundir = "testing"
+    test_every = 10,
+    save_every = 10,  # must be a multiple of test_every
+    rundir = "l5_r6_u10"
 )
 
 # ---------------- loading Cobra model ----------------
@@ -221,7 +221,7 @@ for epoch = 1:n_epochs
     if epoch % hyper.test_every == 0
         update_stats!(stats, epoch, nn(X), y, test=false)
         ŷtest = nn(Xtest)
-        update_stats!(stats, epoch, ŷtest, ytest, test=false)
+        update_stats!(stats, epoch, ŷtest, ytest, test=true)
     end
 
     if epoch % hyper.save_every == 0
