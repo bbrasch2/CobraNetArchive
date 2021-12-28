@@ -18,6 +18,7 @@ hyper = (
 
     n_epochs = 10,
     n_samples = 100,
+    n_test = 100,
     batch_size = 1,
     replace_fraction = 0.0,
 
@@ -26,8 +27,8 @@ hyper = (
     l1_regularization = 1e-5,
     l2_regularization = 1e-5,
 
-    save_every = 3,
     test_every = 3,
+    save_every = 3,  # must be a multiple of test_every
     rundir = "testing"
 )
 
@@ -190,6 +191,7 @@ loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + h
 n_samples = hyper.n_samples
 n_epochs = hyper.n_epochs
 n_replace = trunc(Int, hyper.replace_fraction * n_samples)
+n_test = hyper.n_test
 
 stats = DataFrame(
     epoch = 1:0,
@@ -202,30 +204,28 @@ run_path, epoch_path = make_run_dir()
 
 X = make_sample_random(n_samples, model, binvars, convars)
 y = oracle(X)
+Xtest = make_sample_random(n_test, model, binvars, convars)
+ytest = oracle(Xtest)
 for epoch = 1:n_epochs
     if n_replace > 0
-        Xnew = make_sample_random(n_replace, model, binvars, convars)
-        ynew = oracle(Xnew)
         locs = Random.randperm(n_samples)[1:n_replace]
-        X[:,locs] = Xnew
-        y[locs] = ynew
+        X[:,locs] = make_sample_random(n_replace, model, binvars, convars)
+        y[locs] = oracle(X[:,locs])
     end
 
     println("Epoch ", epoch)
-    if epoch % hyper.test_every == 0
-        update_stats!(stats, epoch, nn(X), y, test=true)
-    end
 
     data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
     Flux.train!(loss, ps, data, opt)
 
     if epoch % hyper.test_every == 0
-        ŷ = nn(X)
-        update_stats!(stats, epoch, ŷ, y, test=false)
+        update_stats!(stats, epoch, nn(X), y, test=false)
+        ŷtest = nn(Xtest)
+        update_stats!(stats, epoch, ŷtest, ytest, test=false)
     end
 
     if epoch % hyper.save_every == 0
-        save_epoch(epoch_path, epoch, stats, nn, ŷ, y)
+        save_epoch(epoch_path, epoch, stats, nn, ŷtest, ytest)
     end
 end
 
