@@ -1,7 +1,7 @@
 
 using Revise
 
-using Statistics, DataFrames
+using Statistics, DataFrames, Random
 using Plots
 using JLD
 
@@ -19,6 +19,7 @@ hyper = (
     n_epochs = 10,
     n_samples = 100,
     batch_size = 1,
+    replace_fraction = 0.0,
 
     optimizer = Descent,
     learning_rate = 1e-4,
@@ -188,6 +189,7 @@ loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + h
 
 n_samples = hyper.n_samples
 n_epochs = hyper.n_epochs
+n_replace = trunc(Int, hyper.replace_fraction * n_samples)
 
 stats = DataFrame(
     epoch = 1:0,
@@ -198,9 +200,16 @@ stats = DataFrame(
 )
 run_path, epoch_path = make_run_dir()
 
+X = make_sample_random(n_samples, model, binvars, convars)
+y = oracle(X)
 for epoch = 1:n_epochs
-    X = make_sample_random(n_samples, model, binvars, convars)
-    y = oracle(X)
+    if n_replace > 0
+        Xnew = make_sample_random(n_replace, model, binvars, convars)
+        ynew = oracle(Xnew)
+        locs = Random.randperm(n_samples)[1:n_replace]
+        X[:,locs] = Xnew
+        y[locs] = ynew
+    end
 
     println("Epoch ", epoch)
     if epoch % hyper.test_every == 0
