@@ -9,39 +9,62 @@ using Tiger
 using JuMP, Gurobi
 using Flux, CUDA
 
+
+hyper = (
+    widths = [1024, 512, 256, 128],
+    activations = [elu, elu, elu, elu, elu],
+    #loss = Flux.Losses.crossentropy,
+    loss = Flux.Losses.mse,
+
+    n_epochs = 1000,
+    n_samples = 1000,
+    batch_size = 1,
+
+    optimizer = Descent,
+    learning_rate = 1e-4,
+    l1_regularization = 1e-5,
+    l2_regularization = 1e-5,
+
+    save_every = 10,
+    rundir = "r5_l4_h4_elu_s"
+)
+
+# ---------------- loading Cobra model ----------------
+
+function load_cobra(modelfile, varname; 
+                    gene_ub=1000, ex_ub=100, remove_ngam=true, 
+                    media_file="CDM.toml",
+                    exchanges=nothing, genes=nothing)
+    cobra = read_cobra(modelfile, varname)
+    if remove_ngam
+        cobra.lb[cobra.lb .> 0.0] .= 0.0
+    end
+    if !isnothing(media_file)
+        set_media_bounds!(cobra, media_file)
+    end
+    if isnothing(exchanges)
+        exchanges = get_exchange_rxns(cobra)
+    end
+    if isnothing(genes)
+        genes = cobra.genes
+    end
+    cobra = extend_cobra_cnf(cobra, ub=gene_ub)
+    model = build_base_model(cobra)
+    binvars = variable_by_name.(model, exchanges)
+    convars = variable_by_name.(model, genes)
+
+    return model, binvars, convars
+end
+
 GENE_UB = 1000
 EX_UB = 100 # from CDM.toml
 
-cobra = read_cobra("iSMU.mat", "iSMU")
-cobra.lb[cobra.lb .> 0.0] .= 0.0  # remove NGAM
-cobra = extend_cobra_cnf(cobra, ub=GENE_UB)
-set_media_bounds!(cobra, "CDM.toml")
+model, binvars, convars = load_cobra(
+    "iSMU.mat", "iSMU"; gene_ub=GENE_UB, media_file="CDM.toml", 
+    exchanges=readlines("iSMU_amino_acid_exchanges.txt")
+)
 
-amino_acid_exchanges = [
-"ala_exch", 
-"arg_exch", 
-"asp_exch", 
-"asn_exch", 
-"cys_exch", 
-"glu_exch", 
-"gln_exch", 
-"gly_exch", 
-"his_exch", 
-"ile_exch", 
-"leu_exch", 
-"lys_exch", 
-"met_exch", 
-"phe_exch", 
-"pro_exch", 
-"ser_exch", 
-"thr_exch", 
-"trp_exch", 
-"tyr_exch", 
-"val_exch" ];
-
-model = build_base_model(cobra)
-binvars = variable_by_name.(model, amino_acid_exchanges)
-convars = variable_by_name.(model, cobra.genes)
+# ---------------- Oracle building ----------------
 
 nbin = length(binvars)
 ncon = length(convars)
@@ -85,6 +108,19 @@ end
 
 oracle = build_oracle(model, binvars, convars; bin_ub=EX_UB, con_ub=GENE_UB)
 
+# ---------------- Neural Net building ----------------
+
+ntotal = nbin + ncon
+pushfirst!(hyper.widths, ntotal)
+push!(hyper.widths, 1)
+layers = Vector{Any}(undef, length(hyper.activations))
+for i = 1:length(hyper.widths)-1
+    layers[i] = Dense(hyper.widths[i], hyper.widths[i+1], hyper.activations[i])
+end
+nn = Chain(layers...)
+
+# ---------------- Neural Net training ----------------
+
 function make_sample_random(n, model, binvars, convars)
     nbin = length(binvars)
     ncon = length(convars)
@@ -100,36 +136,6 @@ function make_sample_random(n, model, binvars, convars)
     return vcat(binvals, convals)
 end
 
-function plot_test_train(epoch, test_mean, test_max, train_mean, train_max)
-    p_train = plot(1:epoch, hcat(train_mean[1:epoch], train_max[1:epoch]), plot_title="train", ylim=(0,1), legend=false)
-    p_test = plot([1:epoch], hcat(test_mean[1:epoch], test_max[1:epoch]), plot_title="test", ylim=(0,1), legend=false)
-    display(plot!(p_train, p_test, plot_title=""))
-end
-
-hyper = (
-    n_epochs = 100,
-    n_samples = 10000,
-    batch_size = 32,
-
-    optimizer = ADAM,
-    learning_rate = 1e-10,
-
-    loss = Flux.Losses.crossentropy,
-
-    save_every = 100,
-    save_prefix = "train10_"
-)
-
-ntotal = nbin + ncon
-NEURONS = 512
-nn = Chain(
-    Dense(ntotal, 1024, elu),
-    #Dense(1024, 512, elu),
-    Dense(1024, 256, elu),
-    Dense(256, 128, elu),
-    Dense(128, 1, σ)
-)
-
 function update_stats!(stats, epoch, ŷ, y; test=false)
     if test
         mean_col = stats.test_mean
@@ -143,11 +149,29 @@ function update_stats!(stats, epoch, ŷ, y; test=false)
     max_col[epoch] = maximum(abs.(ŷ .- y))
 end
 
-# training loop
-loss(X, y) = hyper.loss(nn(X), y)
+function make_run_dir()
+    runpath = "runs/" * hyper.rundir * "/"
+    epochpath = runpath * "epochs/"
+    mkpath(epochpath)
+    open(runpath * "hyper.txt", "w") do io
+        print(io, hyper)
+    end
+    return runpath, epochpath
+end
+
+function save_epoch(epoch_path, epoch, stats, nn, ŷ, y)
+    save(epoch_path * string(epoch) * ".jld", 
+         "stats", stats, "nn", nn, "ŷ", ŷ, "y", y)
+end
+
 
 ps = params(nn)
 opt = hyper.optimizer(hyper.learning_rate)
+
+# training loop
+l1_norm(x) = sum(abs, x)
+l2_norm(x) = sum(abs2, x)
+loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + hyper.l2_regularization*sum(l2_norm, ps)
 
 n_samples = hyper.n_samples
 n_epochs = hyper.n_epochs
@@ -159,24 +183,24 @@ stats = DataFrame(
     train_mean = zeros(n_epochs),
     train_max = zeros(n_epochs)
 )
+run_path, epoch_path = make_run_dir()
 
-X = make_sample_random(n_samples, model, binvars, convars)
-y = oracle(X)
 for epoch = 1:n_epochs
+    X = make_sample_random(n_samples, model, binvars, convars)
+    y = oracle(X)
+
     println("Epoch ", epoch)
     update_stats!(stats, epoch, nn(X), y, test=true)
 
-    data = Flux.DataLoader((X, vcat(y)), batchsize=hyper.batch_size)
+    data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
     Flux.train!(loss, ps, data, opt)
 
     ŷ = nn(X)
     update_stats!(stats, epoch, ŷ, y, test=false)
 
     if epoch % hyper.save_every == 0
-        save(hyper.save_prefix * string(epoch) * ".jld",
-            "stats", stats, "nn", nn, "ŷ", ŷ, "y", y)
+        save_epoch(epoch_path, epoch, stats, nn, ŷ, y)
     end
-
 end
 
 
