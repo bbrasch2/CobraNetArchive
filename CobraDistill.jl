@@ -26,6 +26,7 @@ hyper = (
     l2_regularization = 1e-5,
 
     save_every = 3,
+    test_every = 3,
     rundir = "testing"
 )
 
@@ -202,13 +203,17 @@ for epoch = 1:n_epochs
     y = oracle(X)
 
     println("Epoch ", epoch)
-    update_stats!(stats, epoch, nn(X), y, test=true)
+    if epoch % hyper.test_every == 0
+        update_stats!(stats, epoch, nn(X), y, test=true)
+    end
 
     data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
     Flux.train!(loss, ps, data, opt)
 
-    ŷ = nn(X)
-    update_stats!(stats, epoch, ŷ, y, test=false)
+    if epoch % hyper.test_every == 0
+        ŷ = nn(X)
+        update_stats!(stats, epoch, ŷ, y, test=false)
+    end
 
     if epoch % hyper.save_every == 0
         save_epoch(epoch_path, epoch, stats, nn, ŷ, y)
