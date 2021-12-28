@@ -16,8 +16,8 @@ hyper = (
     #loss = Flux.Losses.crossentropy,
     loss = Flux.Losses.mse,
 
-    n_epochs = 1000,
-    n_samples = 1000,
+    n_epochs = 10,
+    n_samples = 100,
     batch_size = 1,
 
     optimizer = Descent,
@@ -25,8 +25,8 @@ hyper = (
     l1_regularization = 1e-5,
     l2_regularization = 1e-5,
 
-    save_every = 10,
-    rundir = "r5_l4_h4_elu_s"
+    save_every = 3,
+    rundir = "testing"
 )
 
 # ---------------- loading Cobra model ----------------
@@ -137,6 +137,17 @@ function make_sample_random(n, model, binvars, convars)
 end
 
 function update_stats!(stats, epoch, ŷ, y; test=false)
+    if !(epoch in stats.epoch)
+        newdf = DataFrame(
+            epoch=epoch, 
+            test_mean=0.0,
+            test_max=0.0,
+            train_mean=0.0,
+            train_max=0.0
+        )
+        append!(stats, newdf)
+    end
+
     if test
         mean_col = stats.test_mean
         max_col = stats.test_max
@@ -145,8 +156,9 @@ function update_stats!(stats, epoch, ŷ, y; test=false)
         max_col = stats.train_max
     end
 
-    mean_col[epoch] = mean(abs.(ŷ .- y))
-    max_col[epoch] = maximum(abs.(ŷ .- y))
+    row = findfirst(stats.epoch .== epoch)
+    mean_col[row] = mean(abs.(ŷ .- y))
+    max_col[row] = maximum(abs.(ŷ .- y))
 end
 
 function make_run_dir()
@@ -177,11 +189,11 @@ n_samples = hyper.n_samples
 n_epochs = hyper.n_epochs
 
 stats = DataFrame(
-    epoch = 1:n_epochs,
-    test_mean = zeros(n_epochs),
-    test_max = zeros(n_epochs),
-    train_mean = zeros(n_epochs),
-    train_max = zeros(n_epochs)
+    epoch = 1:0,
+    test_mean = zeros(0),
+    test_max = zeros(0),
+    train_mean = zeros(0),
+    train_max = zeros(0)
 )
 run_path, epoch_path = make_run_dir()
 
