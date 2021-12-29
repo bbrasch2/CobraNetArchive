@@ -23,13 +23,13 @@ hyper = (
     replace_fraction = 0.1,
 
     optimizer = Descent,
-    learning_rate = 1e-5,
-    l1_regularization = 1e-6,
-    l2_regularization = 1e-6,
+    learning_rate = 5e-5,
+    l1_regularization = 0.0,
+    l2_regularization = 0.0,
 
     test_every = 10,
     save_every = 10,  # must be a multiple of test_every
-    rundir = "l5_r6_u10"
+    rundir = "testing"
 )
 
 # ---------------- loading Cobra model ----------------
