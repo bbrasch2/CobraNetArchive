@@ -3,7 +3,8 @@ using JLD
 using Plots
 using DataFrames
 
-run_names = ["l5_r0_u10", "l5_r5_u10", "l5_r6_u10", "l55_r0_u10"]
+#run_names = ["l5_r5_u10", "l5_r6_u10", "l55_r0_u10"]
+run_names = ["l5_r0_aa", "l6_r0_aa", "l7_r0_aa", "l57_r0_aa"]
 rundirs = "/home/paul/CobraNet/runs/" .* run_names .* "/"
 
 function save_test_train(stats, filename)

@@ -1,5 +1,6 @@
 nohup.out
 *.jld
 runs/
+cache/
 
 

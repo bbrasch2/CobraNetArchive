@@ -5,139 +5,80 @@ using Statistics, DataFrames, Random
 using Plots
 using JLD
 
-using Tiger
-using JuMP, Gurobi
 using Flux, CUDA
 
 
 hyper = (
-    widths = [1024, 512, 256, 128],
-    activations = [elu, elu, elu, elu, elu],
+    widths = [256, 128, 64],
+    activations = [elu, elu, elu, elu],
     #loss = Flux.Losses.crossentropy,
     loss = Flux.Losses.mse,
 
-    n_epochs = 1000,
-    n_samples = 5000,
+    n_epochs = 5000,
+    n_samples = 10000,
     n_test = 1000,
     batch_size = 1,
     replace_fraction = 0.1,
 
     optimizer = Descent,
-    learning_rate = 5e-5,
+    learning_rate = 1e-7,
     l1_regularization = 0.0,
     l2_regularization = 0.0,
 
     test_every = 10,
     save_every = 10,  # must be a multiple of test_every
-    rundir = "testing"
+    rundir = "l7_h3_aa",
+
+    cached = true,
+    cachedir = "cache/random10M/"
 )
 
-# ---------------- loading Cobra model ----------------
+# ---------------- loading Cobra model & oracle ----------------
+# model, binvars, convars
+# oracle
+# nbin, ncon, ntotal
+include("cobra_model.jl")
 
-function load_cobra(modelfile, varname; 
-                    gene_ub=1000, ex_ub=100, remove_ngam=true, 
-                    media_file="CDM.toml",
-                    exchanges=nothing, genes=nothing)
-    cobra = read_cobra(modelfile, varname)
-    if remove_ngam
-        cobra.lb[cobra.lb .> 0.0] .= 0.0
-    end
-    if !isnothing(media_file)
-        set_media_bounds!(cobra, media_file)
-    end
-    if isnothing(exchanges)
-        exchanges = get_exchange_rxns(cobra)
-    end
-    if isnothing(genes)
-        genes = cobra.genes
-    end
-    cobra = extend_cobra_cnf(cobra, ub=gene_ub)
-    model = build_base_model(cobra)
-    binvars = variable_by_name.(model, exchanges)
-    convars = variable_by_name.(model, genes)
+# ---------------- Sampling ----------------
 
-    return model, binvars, convars
-end
-
-GENE_UB = 1000
-EX_UB = 100 # from CDM.toml
-
-model, binvars, convars = load_cobra(
-    "iSMU.mat", "iSMU"; gene_ub=GENE_UB, media_file="CDM.toml", 
-    exchanges=readlines("iSMU_amino_acid_exchanges.txt")
-)
-
-# ---------------- Oracle building ----------------
-
-nbin = length(binvars)
-ncon = length(convars)
-
-function build_oracle(model, binvars, convars; bin_ub=1.0, con_ub=1.0, normalize=true, copy=true, optimizer=Gurobi.Optimizer, silent=true)
-    if copy
-        model, reference_map = copy_model(model)
-        set_optimizer(model, optimizer)
-        binvars = reference_map[binvars]
-        convars = reference_map[convars]
-    end
-
-    vars = vcat(binvars, convars)
-    ub = vcat(bin_ub .* ones(length(binvars)), con_ub .* ones(length(convars)))
-
-    if silent
-        set_silent(model)
-    end
-
-    if normalize
-        set_upper_bound.(vars, ub)
-        optimize!(model)
-        max_objval = objective_value(model)
-    else
-        max_objval = 1.0
-    end
-
-    function run_model(X)
-        n = size(X, 2)
-        output = zeros(n)
-        for i = 1:n
-            set_upper_bound.(vars, ub .* X[:,i])
-            optimize!(model)
-            output[i] = objective_value(model) / max_objval
-        end
-        return output
-    end
-
-    return run_model
-end
-
-oracle = build_oracle(model, binvars, convars; bin_ub=EX_UB, con_ub=GENE_UB)
-
-# ---------------- Neural Net building ----------------
-
-ntotal = nbin + ncon
-pushfirst!(hyper.widths, ntotal)
-push!(hyper.widths, 1)
-layers = Vector{Any}(undef, length(hyper.activations))
-for i = 1:length(hyper.widths)-1
-    layers[i] = Dense(hyper.widths[i], hyper.widths[i+1], hyper.activations[i])
-end
-nn = Chain(layers...)
-
-# ---------------- Neural Net training ----------------
-
-function make_sample_random(n, model, binvars, convars)
+function make_sample_random(n, oracle, model, binvars, convars)
     nbin = length(binvars)
     ncon = length(convars)
 
-    binvals = zeros(nbin, n)
+    binvals = zeros(Float32, nbin, n)
     card_bin = rand(1:nbin, n)
     for i = 1:n
         binvals[rand(1:nbin, card_bin[i]),i] .= 1.0
     end
 
-    convals = rand(ncon, n)
+    convals = rand(Float32, ncon, n)
 
-    return vcat(binvals, convals)
+    X = vcat(binvals, convals)
+
+    return X, convert.(Float32, oracle(X))
 end
+
+n_samples = hyper.n_samples
+n_replace = trunc(Int, hyper.replace_fraction * n_samples)
+n_test = hyper.n_test
+cachedir = hyper.cachedir
+
+include("caching.jl")
+
+if hyper.cached
+    Xtest, ytest = get_batch(cachedir, n_test)
+    X, y = get_batch(cachedir, n_samples; skip=n_test)
+    batch_channel = Channel(1)
+    errormonitor(@async serve_batches(batch_channel, cachedir, n_replace, hyper.n_epochs; skip=n_test+n_samples))
+    next_batch() = take!(batch_channel)
+else
+    get_sample(n) = make_sample_random(n, oracle, model, binvars, convars)
+    Xtest, ytest = get_sample(n_test)
+    X, y = get_sample(n_samples)
+    next_batch() = get_sample(n_replace)
+end
+
+# ---------------- Stats ----------------
 
 function update_stats!(stats, epoch, ŷ, y; test=false)
     if !(epoch in stats.epoch)
@@ -179,20 +120,6 @@ function save_epoch(epoch_path, epoch, stats, nn, ŷ, y)
          "stats", stats, "nn", nn, "ŷ", ŷ, "y", y)
 end
 
-
-ps = params(nn)
-opt = hyper.optimizer(hyper.learning_rate)
-
-# training loop
-l1_norm(x) = sum(abs, x)
-l2_norm(x) = sum(abs2, x)
-loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + hyper.l2_regularization*sum(l2_norm, ps)
-
-n_samples = hyper.n_samples
-n_epochs = hyper.n_epochs
-n_replace = trunc(Int, hyper.replace_fraction * n_samples)
-n_test = hyper.n_test
-
 stats = DataFrame(
     epoch = 1:0,
     test_mean = zeros(0),
@@ -202,15 +129,29 @@ stats = DataFrame(
 )
 run_path, epoch_path = make_run_dir()
 
-X = make_sample_random(n_samples, model, binvars, convars)
-y = oracle(X)
-Xtest = make_sample_random(n_test, model, binvars, convars)
-ytest = oracle(Xtest)
-for epoch = 1:n_epochs
+# ---------------- Neural Net building ----------------
+
+pushfirst!(hyper.widths, ntotal)
+push!(hyper.widths, 1)
+layers = Vector{Any}(undef, length(hyper.activations))
+for i = 1:length(hyper.widths)-1
+    layers[i] = Dense(hyper.widths[i], hyper.widths[i+1], hyper.activations[i])
+end
+nn = Chain(layers...)
+
+# ---------------- Neural Net training ----------------
+
+ps = params(nn)
+opt = hyper.optimizer(hyper.learning_rate)
+
+l1_norm(x) = sum(abs, x)
+l2_norm(x) = sum(abs2, x)
+loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + hyper.l2_regularization*sum(l2_norm, ps)
+
+for epoch = 1:hyper.n_epochs
     if n_replace > 0
         locs = Random.randperm(n_samples)[1:n_replace]
-        X[:,locs] = make_sample_random(n_replace, model, binvars, convars)
-        y[locs] = oracle(X[:,locs])
+        X[:,locs], y[locs] = next_batch()
     end
 
     println("Epoch ", epoch)
@@ -227,6 +168,10 @@ for epoch = 1:n_epochs
     if epoch % hyper.save_every == 0
         save_epoch(epoch_path, epoch, stats, nn, ŷtest, ytest)
     end
+end
+
+if hyper.cached
+    close(batch_channel)
 end
 
 
