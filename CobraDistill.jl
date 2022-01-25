@@ -65,6 +65,18 @@ cachedir = hyper.cachedir
 
 include("caching.jl")
 
+# Before training we need to generate test data (Xtest, ytest)
+# and the first epoch of training data (X, y). During each epoch,
+# n_replace of the training entries are randomly replaced with 
+# new training data. The training loop calls next_batch() to 
+# generate the n_replace new observations.
+# 
+# If we're using a cache, we first read the test and inital 
+# training batches. Then we define start a thread to read batches
+# from file and wrap the channel with next_batch().
+#
+# If no cache is used, we generate random test and train data
+# and wrap the random sampler with next_batch().
 if hyper.cached
     Xtest, ytest = get_batch(cachedir, n_test)
     X, y = get_batch(cachedir, n_samples; skip=n_test)
@@ -79,6 +91,11 @@ else
 end
 
 # ---------------- Stats ----------------
+# This section contains helper functions to calculating test 
+# and train stats. It also creates a directory for each run that 
+# holds the trained model and data. The functions in nnviz.jl 
+# can be run later to create plots in the run directory. The main 
+# training loop does not output anything.
 
 function update_stats!(stats, epoch, ŷ, y; test=false)
     if !(epoch in stats.epoch)
@@ -120,6 +137,8 @@ function save_epoch(epoch_path, epoch, stats, nn, ŷ, y)
          "stats", stats, "nn", nn, "ŷ", ŷ, "y", y)
 end
 
+# Now we can create the stats DF and the run directory for this 
+# training run.
 stats = DataFrame(
     epoch = 1:0,
     test_mean = zeros(0),
@@ -130,7 +149,17 @@ stats = DataFrame(
 run_path, epoch_path = make_run_dir()
 
 # ---------------- Neural Net building ----------------
-
+# The oracle has ntotal inputs and 1 output. Using the widths
+# and activations in the tuple `hyper`, the NN structure is
+#
+#   Chain(
+#       Dense(ntotal,      widths[1], activations[1]),
+#       Dense(widths[1],   widths[2], activations[2]), 
+#       ...,
+#       Dense(widths[i-1], widths[i], activations[i]),
+#       ...,
+#       Dense(widths[end], 1,         activations[end])
+#   )
 pushfirst!(hyper.widths, ntotal)
 push!(hyper.widths, 1)
 layers = Vector{Any}(undef, length(hyper.activations))
