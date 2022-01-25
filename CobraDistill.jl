@@ -173,12 +173,15 @@ nn = Chain(layers...)
 ps = params(nn)
 opt = hyper.optimizer(hyper.learning_rate)
 
+# Using both L1 and L2 regularization, but either can be zeroed
+# out using `hyper.l*_regularization`.
 l1_norm(x) = sum(abs, x)
 l2_norm(x) = sum(abs2, x)
 loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + hyper.l2_regularization*sum(l2_norm, ps)
 
 for epoch = 1:hyper.n_epochs
     if n_replace > 0
+        # insert new samples randomly in the training data
         locs = Random.randperm(n_samples)[1:n_replace]
         X[:,locs], y[locs] = next_batch()
     end
@@ -195,6 +198,9 @@ for epoch = 1:hyper.n_epochs
     end
 
     if epoch % hyper.save_every == 0
+        # notice how this relies on ŷtest, which is only computed
+        # every `hyper.test_every` epochs. So `hyper.save_every`
+        # needs to be a multiple of `hyper.test_every`.
         save_epoch(epoch_path, epoch, stats, nn, ŷtest, ytest)
     end
 end
@@ -202,7 +208,6 @@ end
 if hyper.cached
     close(batch_channel)
 end
-
 
 
 
