@@ -20,4 +20,4 @@ function make_sample_random(n, oracle, model, binvars, convars)
 end
 
 sampler(n) = make_sample_random(n, oracle, model, binvars, convars)
-cache_training_data(10000, 1000, sampler, "/home/paul/CobraNet/cache/random10M")
+cache_training_data(10000, 1000, sampler, "cache/random10M")
