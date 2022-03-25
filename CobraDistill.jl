@@ -1,4 +1,3 @@
-
 using Revise
 
 using Statistics, DataFrames, Random
@@ -8,36 +7,65 @@ using JLD
 using Flux, CUDA
 
 
-hyper = (
-    widths = [256, 128, 64],
-    activations = [elu, elu, elu, elu],
-    #loss = Flux.Losses.crossentropy,
-    loss = Flux.Losses.mse,
+#hyper = (
+#    widths = [256, 128, 64],
+#    activations = [elu, elu, elu, elu],
+#    #loss = Flux.Losses.crossentropy,
+#    loss = Flux.Losses.mse,
+#
+#    n_epochs = 1000,
+#    n_samples = 10000,
+#    n_test = 1000,
+#    batch_size = 1,
+#    replace_fraction = 0.1,
+#
+#    optimizer = Descent,
+#    learning_rate = 1e-7,
+#    l1_regularization = 0.0,
+#    l2_regularization = 0.0,
+#
+#    test_every = 10,
+#    save_every = 10,  # must be a multiple of test_every
+#    rundir = "test",
+#
+#    cached = true,
+#    cachedir = "cache/random10M/"
+#)
+function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, learning_rate_in, rundir_in)
+    hyper = (
+        widths = widths_in,
+        activations = activations_in,
+        loss = Flux.Losses.mse,
 
-    n_epochs = 5000,
-    n_samples = 10000,
-    n_test = 1000,
-    batch_size = 1,
-    replace_fraction = 0.1,
+        n_epochs = n_epochs_in,
+        n_samples = 10000,
+        n_test = 1000,
+        batch_size = batch_size_in,
+        replace_fraction = 0.1,
 
-    optimizer = Descent,
-    learning_rate = 1e-7,
-    l1_regularization = 0.0,
-    l2_regularization = 0.0,
+        optimizer = Descent,
+        learning_rate = learning_rate_in,
+        l1_regularization = 0.0,
+        l2_regularization = 0.0,
 
-    test_every = 10,
-    save_every = 10,  # must be a multiple of test_every
-    rundir = "l7_h3_aa",
+        test_every = 10,
+        save_every = 10,  # must be a multiple of test_every
+        rundir = rundir_in,
 
-    cached = true,
-    cachedir = "cache/random10M/"
-)
+        cached = true,
+        cachedir = "cache/random10M/"
+    )
+    return hyper
+end
 
 # ---------------- loading Cobra model & oracle ----------------
 # model, binvars, convars
 # oracle
 # nbin, ncon, ntotal
-include("cobra_model.jl")
+function load_cobra_model()
+    include("cobra_model.jl")
+    return model, binvars, convars, oracle, nbin, ncon, ntotal
+end
 
 # ---------------- Sampling ----------------
 
@@ -58,10 +86,10 @@ function make_sample_random(n, oracle, model, binvars, convars)
     return X, convert.(Float32, oracle(X))
 end
 
-n_samples = hyper.n_samples
-n_replace = trunc(Int, hyper.replace_fraction * n_samples)
-n_test = hyper.n_test
-cachedir = hyper.cachedir
+#n_samples = hyper.n_samples
+#n_replace = trunc(Int, hyper.replace_fraction * n_samples)
+#n_test = hyper.n_test
+#cachedir = hyper.cachedir
 
 include("caching.jl")
 
@@ -77,18 +105,30 @@ include("caching.jl")
 #
 # If no cache is used, we generate random test and train data
 # and wrap the random sampler with next_batch().
-if hyper.cached
-    Xtest, ytest = get_batch(cachedir, n_test)
-    X, y = get_batch(cachedir, n_samples; skip=n_test)
-    batch_channel = Channel(1)
-    errormonitor(@async serve_batches(batch_channel, cachedir, n_replace, hyper.n_epochs; skip=n_test+n_samples))
-    next_batch() = take!(batch_channel)
-else
-    get_sample(n) = make_sample_random(n, oracle, model, binvars, convars)
-    Xtest, ytest = get_sample(n_test)
-    X, y = get_sample(n_samples)
-    next_batch() = get_sample(n_replace)
-end
+#function make_test_data(hyper)
+#    n_samples = hyper.n_samples
+#    n_replace = trunc(Int, hyper.replace_fraction * n_samples)
+#    n_test = hyper.n_test
+#    cachedir = hyper.cachedir
+#
+#    println("hyper.cached = ", hyper.cached)
+#
+#    if hyper.cached
+#        println("test1")
+#        Xtest, ytest = get_batch(cachedir, n_test)
+#        X, y = get_batch(cachedir, n_samples; skip=n_test)
+#        batch_channel = Channel(1)
+#        errormonitor(@async serve_batches(batch_channel, cachedir, n_replace, hyper.n_epochs; skip=n_test+n_samples))
+#        next_batch() = take!(batch_channel)
+#    else
+#        println("test2")
+#        get_sample(n) = make_sample_random(n, oracle, model, binvars, convars)
+#        Xtest, ytest = get_sample(n_test)
+#        X, y = get_sample(n_samples)
+#        next_batch() = get_sample(n_replace)
+#    end
+#    return next_batch, n_replace
+#end
 
 # ---------------- Stats ----------------
 # This section contains helper functions to calculating test 
@@ -122,12 +162,12 @@ function update_stats!(stats, epoch, ŷ, y; test=false)
     max_col[row] = maximum(abs.(ŷ .- y))
 end
 
-function make_run_dir()
+function make_run_dir(hyper)
     runpath = "runs/" * hyper.rundir * "/"
     epochpath = runpath * "epochs/"
     mkpath(epochpath)
     open(runpath * "hyper.txt", "w") do io
-        print(io, hyper)
+        println(io, hyper)
     end
     return runpath, epochpath
 end
@@ -139,14 +179,17 @@ end
 
 # Now we can create the stats DF and the run directory for this 
 # training run.
-stats = DataFrame(
-    epoch = 1:0,
-    test_mean = zeros(0),
-    test_max = zeros(0),
-    train_mean = zeros(0),
-    train_max = zeros(0)
-)
-run_path, epoch_path = make_run_dir()
+function make_stats(hyper)
+    stats = DataFrame(
+        epoch = 1:0,
+        test_mean = zeros(0),
+        test_max = zeros(0),
+        train_mean = zeros(0),
+        train_max = zeros(0)
+    )
+    run_path, epoch_path = make_run_dir(hyper)
+    return stats, run_path, epoch_path
+end
 
 # ---------------- Neural Net building ----------------
 # The oracle has ntotal inputs and 1 output. Using the widths
@@ -160,53 +203,82 @@ run_path, epoch_path = make_run_dir()
 #       ...,
 #       Dense(widths[end], 1,         activations[end])
 #   )
-pushfirst!(hyper.widths, ntotal)
-push!(hyper.widths, 1)
-layers = Vector{Any}(undef, length(hyper.activations))
-for i = 1:length(hyper.widths)-1
-    layers[i] = Dense(hyper.widths[i], hyper.widths[i+1], hyper.activations[i])
+function make_nn(hyper,ntotal)
+    pushfirst!(hyper.widths, ntotal)
+    push!(hyper.widths, 1)
+    layers = Vector{Any}(undef, length(hyper.activations))
+    for i = 1:length(hyper.widths)-1
+        layers[i] = Dense(hyper.widths[i], hyper.widths[i+1], hyper.activations[i])
+    end
+    nn = Chain(layers...)
+    return nn
 end
-nn = Chain(layers...)
 
 # ---------------- Neural Net training ----------------
+function train_nn(hyper,nn,oracle,model,binvars,convars)
+    n_samples = hyper.n_samples
+    n_replace = trunc(Int, hyper.replace_fraction * n_samples)
+    n_test = hyper.n_test
+    cachedir = hyper.cachedir
 
-ps = params(nn)
-opt = hyper.optimizer(hyper.learning_rate)
+    println("hyper.cached = ", hyper.cached)
 
-# Using both L1 and L2 regularization, but either can be zeroed
-# out using `hyper.l*_regularization`.
-l1_norm(x) = sum(abs, x)
-l2_norm(x) = sum(abs2, x)
-loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + hyper.l2_regularization*sum(l2_norm, ps)
-
-for epoch = 1:hyper.n_epochs
-    if n_replace > 0
-        # insert new samples randomly in the training data
-        locs = Random.randperm(n_samples)[1:n_replace]
-        X[:,locs], y[locs] = next_batch()
+    get_sample(n) = make_sample_random(n, oracle, model, binvars, convars)
+    if hyper.cached
+        println("test1")
+        Xtest, ytest = get_batch(cachedir, n_test)
+        X, y = get_batch(cachedir, n_samples; skip=n_test)
+        batch_channel = Channel(1)
+        errormonitor(@async serve_batches(batch_channel, cachedir, n_replace, hyper.n_epochs; skip=n_test+n_samples))
+        next_batch() = take!(batch_channel)
+    else
+        println("test2")
+        Xtest, ytest = get_sample(n_test)
+        X, y = get_sample(n_samples)
+        next_batch() = get_sample(n_replace)
     end
 
-    println("Epoch ", epoch)
+    ps = params(nn)
+    opt = hyper.optimizer(hyper.learning_rate)
 
-    data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
-    Flux.train!(loss, ps, data, opt)
+    #n_replace = trunc(Int, hyper.replace_fraction * hyper.n_samples)
 
-    if epoch % hyper.test_every == 0
-        update_stats!(stats, epoch, nn(X), y, test=false)
-        ŷtest = nn(Xtest)
-        update_stats!(stats, epoch, ŷtest, ytest, test=true)
+    # Using both L1 and L2 regularization, but either can be zeroed
+    # out using `hyper.l*_regularization`.
+    l1_norm(x) = sum(abs, x)
+    l2_norm(x) = sum(abs2, x)
+    loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + hyper.l2_regularization*sum(l2_norm, ps)
+
+    for epoch = 1:hyper.n_epochs
+        if n_replace > 0
+            # insert new samples randomly in the training data
+            locs = Random.randperm(hyper.n_samples)[1:n_replace]
+            X[:,locs], y[locs] = next_batch()
+        end
+
+        println("Epoch ", epoch)
+        flush(stdout)
+
+        data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
+        Flux.train!(loss, ps, data, opt)
+
+        if epoch % hyper.test_every == 0
+            update_stats!(stats, epoch, nn(X), y, test=false)
+            ŷtest = nn(Xtest)
+            update_stats!(stats, epoch, ŷtest, ytest, test=true)
+        end
+
+        if epoch % hyper.save_every == 0
+            # notice how this relies on ŷtest, which is only computed
+            # every `hyper.test_every` epochs. So `hyper.save_every`
+            # needs to be a multiple of `hyper.test_every`.
+            save_epoch(epoch_path, epoch, stats, nn, ŷtest, ytest)
+        end
     end
 
-    if epoch % hyper.save_every == 0
-        # notice how this relies on ŷtest, which is only computed
-        # every `hyper.test_every` epochs. So `hyper.save_every`
-        # needs to be a multiple of `hyper.test_every`.
-        save_epoch(epoch_path, epoch, stats, nn, ŷtest, ytest)
+    if hyper.cached
+        close(batch_channel)
     end
-end
-
-if hyper.cached
-    close(batch_channel)
 end
 
 
