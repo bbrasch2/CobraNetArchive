@@ -1,17 +1,17 @@
 include("CobraDistill.jl")
+include("nnviz.jl")
 
-hyper = make_hyper([256, 128, 64],[elu, elu, elu, elu],10,1,1e-7,"test1")
-model, binvars, convars, oracle, nbin, ncon, ntotal = load_cobra_model()
-stats, run_path, epoch_path = make_stats(hyper)
-nn = make_nn(hyper,ntotal)
-train_nn(hyper,nn,oracle,model,binvars,convars)
+# TODO: Separate resume-training into new file so params can be changed
 
+hyper_list = [
+    make_hyper([256, 128, 64],[elu, elu, elu, elu],1000,1,1e-6,"test_lr1"),
+    make_hyper([256, 128, 64],[elu, elu, elu, elu],1000,1,1e-7,"test_lr2"),
+    make_hyper([256, 128, 64],[elu, elu, elu, elu],1000,1,1e-8,"test_lr3")
+]
 
-
-
-
-# Hyper is now made inside a function
-# Test data is now generated inside a function
-# Stats are initiated by a function
-# NN is made inside function
-# NN training is done inside function
+for hyper in hyper_list
+    model, binvars, convars, oracle, nbin, ncon, ntotal = load_cobra_model()
+    nn, stats, epoch_path, epoch_skips = get_training_status(hyper,ntotal)
+    train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_skips)
+    create_run_plots(hyper)
+end
