@@ -20,7 +20,7 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, learn
         batch_size = batch_size_in,
         replace_fraction = 0.1,
 
-        optimizer = Descent,
+        optimizer = Flux.ADAM,
         learning_rate = learning_rate_in,
         l1_regularization = 0.0,
         l2_regularization = 0.0,
@@ -29,8 +29,8 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, learn
         save_every = 10,  # must be a multiple of test_every
         rundir = rundir_in,
 
-        cached = false,
-        cachedir = "cache/random10M/"
+        cached = true,
+        cachedir = "cache/space_filler3/"
     )
     return hyper
 end
@@ -154,6 +154,10 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     n_test = hyper.n_test
     cachedir = hyper.cachedir
 
+    if epoch_skips >= hyper.n_epochs
+        return
+    end
+
     # Before training we need to generate test data (Xtest, ytest)
     # and the first epoch of training data (X, y). During each epoch,
     # n_replace of the training entries are randomly replaced with 
@@ -180,7 +184,7 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     end
 
     ps = params(nn)
-    opt = hyper.optimizer(hyper.learning_rate)
+    opt = Flux.Optimiser(hyper.optimizer(), hyper.learning_rate)
 
     # Using both L1 and L2 regularization, but either can be zeroed
     # out using `hyper.l*_regularization`.
@@ -262,7 +266,8 @@ function get_training_status(hyper,ntotal)
     bson = BSON.load(most_recent_saved)
     nn = bson["nn"]
     stats = bson["stats"]
-    _, epoch_path = make_run_dir(hyper)
+    #_, epoch_path = make_run_dir(hyper)
+    epoch_path = "runs/" * hyper.rundir * "/epochs/"
     println("Training started, last epoch saved: " * string(max_epoch) * ". Resuming training.")
     return nn, stats, epoch_path, max_epoch
 end

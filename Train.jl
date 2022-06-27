@@ -1,12 +1,12 @@
+using Flux
+
 include("CobraDistill.jl")
 include("nnviz.jl")
 
 # TODO: Separate resume-training into new file so params can be changed
 
 hyper_list = [
-    make_hyper([256, 128, 64],[elu, elu, elu, elu],1000,1,1e-6,"test_lr1"),
-    make_hyper([256, 128, 64],[elu, elu, elu, elu],1000,1,1e-7,"test_lr2"),
-    make_hyper([256, 128, 64],[elu, elu, elu, elu],1000,1,1e-8,"test_lr3")
+    make_hyper([256, 128, 64], [elu, elu, elu, elu],2000,1,ExpDecay(1e-2,0.995,1,1e-10,1),"testdecay9")
 ]
 
 for hyper in hyper_list

@@ -10,6 +10,7 @@ function cache_training_data(n_per_file, n_files, sampler, dir)
         filename = dir * string(file) * ".jld"
         save(filename, "X", X, "y", y)
         println("Finished file ", string(file), " of ", string(n_files))
+        flush(stdout)
     end
 end
 
