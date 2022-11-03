@@ -70,18 +70,20 @@ end
 # can be run later to create plots in the run directory. The main 
 # training loop does not output anything.
 
-function update_stats!(stats, epoch, ŷ, y; test=false)
+function update_stats!(stats, epoch, ŷ, y, lr; test=false)
     if !(epoch in stats.epoch)
         newdf = DataFrame(
             epoch=epoch, 
             test_mean=0.0,
             test_max=0.0,
             train_mean=0.0,
-            train_max=0.0
+            train_max=0.0,
+            learning_rate=lr
         )
         append!(stats, newdf)
     end
 
+    #TODO: throw error if any of these are NaN
     if test
         mean_col = stats.test_mean
         max_col = stats.test_max
@@ -118,7 +120,8 @@ function make_stats(hyper)
         test_mean = zeros(0),
         test_max = zeros(0),
         train_mean = zeros(0),
-        train_max = zeros(0)
+        train_max = zeros(0),
+        learning_rate = zeros(0)
     )
     run_path, epoch_path = make_run_dir(hyper)
     return stats, run_path, epoch_path
@@ -213,11 +216,12 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
 
         data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
         Flux.train!(loss, ps, data, opt)
+        lr = max(opt.os[2].clip, opt.os[2].start * opt.os[2].decay^floor(epoch/opt.os[2].step))
 
         if epoch % hyper.test_every == 0
-            update_stats!(stats, epoch, nn(X), y, test=false)
+            update_stats!(stats, epoch, nn(X), y, lr, test=false)
             ŷtest = nn(Xtest)
-            update_stats!(stats, epoch, ŷtest, ytest, test=true)
+            update_stats!(stats, epoch, ŷtest, ytest, lr, test=true)
         end
 
         if epoch % hyper.save_every == 0

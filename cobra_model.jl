@@ -24,7 +24,9 @@ function load_cobra(modelfile, varname;
     cobra = extend_cobra_cnf(cobra, ub=gene_ub)
     model = build_base_model(cobra)
     binvars = variable_by_name.(model, exchanges)
-    convars = variable_by_name.(model, genes)
+    convars = variable_by_name.(model, genes)   # find label for objective function at end
+                                                # then constrain at specific (random?) value 
+                                                # and minimize binvars
 
     return model, binvars, convars
 end

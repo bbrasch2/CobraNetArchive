@@ -37,22 +37,28 @@ function make_space_filler(n, oracle, model, binvars, convars)
         overcoverage = 1
         convals_temp = rand(Float32, ncon, n * overcoverage)
         binvals_temp = deepcopy(binvals)
-        for i = 1:(overcoverage-1)
-            binvals_temp = hcat(binvals_temp, binvals)
-        end
+
+        #for i = 1:(overcoverage-1)
+        #    binvals_temp = hcat(binvals_temp, binvals)
+        #end
+
         X = vcat(binvals_temp, convals_temp)
         Y = convert.(Float32, oracle(X))
-        for i = 1:(n * overcoverage)
+
+        for i = 1:n #(n * overcoverage)
             if Y[i] < 0.05 && counts[1] < ceil(n/length(counts))
                 convals[:,counter] = convals_temp[:,i]
+                binvals[:,counter] = binvals_temp[:,i]
                 counts[1] += 1
                 counter += 1
             elseif Y[i] > 0.75 && counts[3] < ceil(n/length(counts))
                 convals[:,counter] = convals_temp[:,i]
+                binvals[:,counter] = binvals_temp[:,i]
                 counts[3] += 1
                 counter += 1
             elseif Y[i] >= 0.05 && Y[i] < 0.75 && counts[2] <= ceil(n/length(counts))
                 convals[:,counter] = convals_temp[:,i]
+                binvals[:,counter] = binvals_temp[:,i]
                 counts[2] += 1
                 counter += 1
             end
@@ -67,8 +73,9 @@ function make_space_filler(n, oracle, model, binvars, convars)
 
     X = vcat(binvals, convals)
     X = X[:,Random.shuffle(1:end)]
-    return X, convert.(Float32, oracle(X))
+    Y = convert.(Float32, oracle(X))
+    return X, Y
 end
 
 sampler(n) = make_space_filler(n, oracle, model, binvars, convars)
-cache_training_data(10000, 1000, sampler, "cache/space_filler3")
+cache_training_data(10000, 1000, sampler, "cache/space_filler4")
