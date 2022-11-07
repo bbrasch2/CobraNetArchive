@@ -6,11 +6,11 @@ include("nnviz.jl")
 # TODO: Separate resume-training into new file so params can be changed
 
 hyper_list = [
-    make_hyper([1024, 512, 256],[elu, elu, elu, elu],2500,1,ExpDecay(1e-1,1,1,1e-10,1),"testdecay18"),
-    make_hyper([1024, 512, 256],[elu, elu, elu, elu],2500,1,ExpDecay(1e-2,1,1,1e-10,1),"testdecay19"),
-    make_hyper([1024, 512, 256],[elu, elu, elu, elu],2500,1,ExpDecay(1e-3,1,1,1e-10,1),"testdecay20"),
-    make_hyper([1024, 512, 256],[elu, elu, elu, elu],2500,1,ExpDecay(1e-4,1,1,1e-10,1),"testdecay21"),
-    make_hyper([2048, 512, 256],[elu, elu, elu, elu],2000,1,ExpDecay(1e-2,0.9925,1,1e-10,1),"testdecay22"),
+    make_hyper([1024, 512, 256],[elu, elu, elu, elu],500,1,ExpDecay(1e-5,1,1,1e-10,1),"test_space7"),
+    make_hyper([1024, 512, 256],[elu, elu, elu, elu],500,1,ExpDecay(1e-6,1,1,1e-10,1),"test_space8"),
+    make_hyper([1024, 512, 256],[elu, elu, elu, elu],500,1,ExpDecay(1e-7,1,1,1e-10,1),"test_space9"),
+    make_hyper([1024, 512, 256],[elu, elu, elu, elu],500,1,ExpDecay(1e-8,1,1,1e-10,1),"test_space10"),
+    make_hyper([1024, 512, 256],[elu, elu, elu, elu],500,1,ExpDecay(1e-9,1,1,1e-10,1),"test_space11")
 ]
 
 for hyper in hyper_list

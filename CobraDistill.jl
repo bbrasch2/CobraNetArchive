@@ -30,7 +30,7 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, learn
         rundir = rundir_in,
 
         cached = true,
-        cachedir = "cache/space_filler3/"
+        cachedir = "cache/space_filled/"
     )
     return hyper
 end

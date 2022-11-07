@@ -77,5 +77,13 @@ function make_space_filler(n, oracle, model, binvars, convars)
     return X, Y
 end
 
-sampler(n) = make_space_filler(n, oracle, model, binvars, convars)
-cache_training_data(10000, 1000, sampler, "cache/space_filler4")
+function generate_space_filled(n, oracle, model)
+    Y = rand(Float32, n)
+    X = convert.(Float32, oracle(Y))
+    return X, Y
+end
+
+#sampler(n) = make_space_filler(n, oracle, model, binvars, convars)
+
+sampler(n) = generate_space_filled(n, oracle, model)
+cache_training_data(10000, 1000, sampler, "cache/space_filled")

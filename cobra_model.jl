@@ -24,17 +24,19 @@ function load_cobra(modelfile, varname;
     cobra = extend_cobra_cnf(cobra, ub=gene_ub)
     model = build_base_model(cobra)
     binvars = variable_by_name.(model, exchanges)
-    convars = variable_by_name.(model, genes)   # find label for objective function at end
+    convars = variable_by_name.(model, genes)
+    objvars = variable_by_name.(model, "bio00001")
+                                                # find label for objective function at end
                                                 # then constrain at specific (random?) value 
                                                 # and minimize binvars
 
-    return model, binvars, convars
+    return model, binvars, convars, objvars
 end
 
 GENE_UB = 1000
 EX_UB = 100 # from CDM.toml
 
-model, binvars, convars = load_cobra(
+model, binvars, convars, objvars = load_cobra(
     "iSMU.mat", "iSMU"; gene_ub=GENE_UB, media_file="CDM.toml", 
     exchanges=readlines("iSMU_amino_acid_exchanges.txt"),
     genes=readlines("iSMU_amino_acid_genes.txt")
@@ -45,12 +47,13 @@ model, binvars, convars = load_cobra(
 nbin = length(binvars)
 ncon = length(convars)
 
-function build_oracle(model, binvars, convars; bin_ub=1.0, con_ub=1.0, normalize=true, copy=true, optimizer=Gurobi.Optimizer, silent=true)
+function build_oracle(model, binvars, convars, objvars; bin_ub=1.0, con_ub=1.0, normalize=true, copy=true, optimizer=Gurobi.Optimizer, silent=true)
     if copy
         model, reference_map = copy_model(model)
         set_optimizer(model, optimizer)
         binvars = reference_map[binvars]
         convars = reference_map[convars]
+        objvars = reference_map[objvars]
     end
 
     vars = vcat(binvars, convars)
@@ -68,13 +71,26 @@ function build_oracle(model, binvars, convars; bin_ub=1.0, con_ub=1.0, normalize
         max_objval = 1.0
     end
 
-    function run_model(X)
-        n = size(X, 2)
-        output = zeros(n)
+    @objective(model, Min, sum(vars))
+
+    #function run_model(X)
+    #    n = size(X, 2)
+    #    output = zeros(n)
+    #    for i = 1:n
+    #        set_upper_bound.(vars, ub .* X[:,i])
+    #        optimize!(model)
+    #        output[i] = objective_value(model) / max_objval
+    #    end
+    #    return output
+    #end
+
+    function run_model(Y)
+        n = length(Y)
+        output = zeros(size(vars, 1), n)
         for i = 1:n
-            set_upper_bound.(vars, ub .* X[:,i])
+            fix(objvars, Y[i], force=true)
             optimize!(model)
-            output[i] = objective_value(model) / max_objval
+            output[:,i] = value.(vars)
         end
         return output
     end
@@ -82,6 +98,6 @@ function build_oracle(model, binvars, convars; bin_ub=1.0, con_ub=1.0, normalize
     return run_model
 end
 
-oracle = build_oracle(model, binvars, convars; bin_ub=EX_UB, con_ub=GENE_UB)
+oracle = build_oracle(model, binvars, convars, objvars; bin_ub=EX_UB, con_ub=GENE_UB)
 
 ntotal = nbin + ncon

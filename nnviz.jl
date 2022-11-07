@@ -18,7 +18,7 @@ end
 function save_orderplot(ŷ, y, filename)
     I = sortperm(y)
     plot(1:length(y), hcat(y[I], ŷ[I]), label=["Actual" "Predicted"], 
-        legend=:bottomright, xlabel="Sample", ylabel=("Fitness"))
+        legend=:bottomright, xlabel="Sample", ylabel=("Fitness"), ylims=(-0.1, 1.1))
     savefig(filename)
 end
 

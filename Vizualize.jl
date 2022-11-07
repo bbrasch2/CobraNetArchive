@@ -1,7 +1,7 @@
 include("nnviz.jl")
 
 name_list = [
-    "testdecay19"
+    "testspace6"
 ]
 
 for name in name_list
