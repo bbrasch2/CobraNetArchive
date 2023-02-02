@@ -6,10 +6,68 @@ function cache_training_data(n_per_file, n_files, sampler, dir)
     end
     mkpath(dir)
     for file = 1:n_files
-        X, y = sampler(n_per_file)
         filename = dir * string(file) * ".jld"
+        if isfile(filename)
+            println("Found file ", string(file), " of ", string(n_files))
+            flush(stdout)
+            continue
+        end
+        X, y = sampler(n_per_file)
         save(filename, "X", X, "y", y)
         println("Finished file ", string(file), " of ", string(n_files))
+        flush(stdout)
+    end
+end
+
+function mix_cache(cache_input1, cache_input2, cache_output, mix_ratio, n_files)
+    # Validate inputs
+    if !endswith(cache_output, "/")
+        cache_output *= "/"
+    end
+    mkpath(cache_output)
+    if !endswith(cache_input1, "/")
+        cache_input1 *= "/"
+    end
+    if !endswith(cache_input2, "/")
+        cache_input2 *= "/"
+    end
+
+    for epoch = 1:n_files
+        # Skip if output file exists already
+        output_filename = cache_output * string(epoch) * ".jld"
+        if isfile(output_filename)
+            println("Found file ", string(epoch), " of ", string(n_files))
+            flush(stdout)
+            continue
+        end
+        
+        # Skip any missing inputs
+        input_filename1 = cache_input1 * string(epoch) * ".jld"
+        input_filename2 = cache_input2 * string(epoch) * ".jld"
+        if !isfile(input_filename1) || !isfile(input_filename2)
+            println("One of the two input files is missing for file ", string(epoch))
+            flush(stdout)
+            continue
+        end
+
+        # Load data
+        X1, y1 = load(input_filename1, "X", "y")
+        X2, y2 = load(input_filename2, "X", "y")
+
+        # Reject any dimension mismatch
+        if !(size(X1)[2] == size(X2)[2] == size(y1)[1] == size(y2)[1])
+            println("Dimension mismatch for file ", string(epoch))
+            flush(stdout)
+            continue
+        end
+
+        # Mix data
+        n_replace = Int(floor(size(X1)[2] * (1 - mix_ratio)))
+        locs = Random.randperm(size(X1)[2])[1:n_replace]
+        X1[:,locs], y1[locs] = X2[:,locs], y2[locs]
+        save(output_filename, "X", X1, "y", y1)
+        
+        println("Finished file ", string(epoch), " of ", string(n_files))
         flush(stdout)
     end
 end
