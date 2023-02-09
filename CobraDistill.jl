@@ -29,7 +29,7 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in,
         l2_regularization = 0.0,
 
         test_every = 10,
-        save_every = 10,  # must be a multiple of test_every
+        save_every = 250,  # must be a multiple of test_every
         rundir = rundir_in,
 
         cached = true,
@@ -192,9 +192,9 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     end
 
     ps = params(nn)
-    #opt = hyper.optimizer(hyper.learning_rate)
+    opt = hyper.optimizer(hyper.learning_rate...)
     #opt = hyper.optimizer()
-    opt = Flux.Optimise.Optimiser(hyper.optimizer(), ExpDecay(1, hyper.learning_rate, 1))
+    #opt = Flux.Optimise.Optimiser(hyper.optimizer(), ExpDecay(1, hyper.learning_rate, 1, 0))
 
     # Using both L1 and L2 regularization, but either can be zeroed
     # out using `hyper.l*_regularization`.
@@ -312,9 +312,31 @@ function get_nn(name)
     return nn
 end
 
+function get_stats(name)
+    epoch_path = "runs/" * name * "/epochs/"
+    max_epoch = 0
+    most_recent_saved = ""
+    for bsonfile in readdir(epoch_path)
+        filename = epoch_path * bsonfile
+        epoch = parse(Int, splitext(splitdir(filename)[2])[1])
+        if epoch > max_epoch
+            max_epoch = epoch
+            most_recent_saved = filename
+        end
+    end
+    bson = BSON.load(most_recent_saved)
+    stats = bson["stats"]
+    return stats
+end
+
 # ---------------- Evaluating Network ----------------
 function evaluate_nn(nn, oracle, model, binvars, convars, n_samples)
     X, y = make_sample_random(n_samples, oracle, model, binvars, convars)
     ŷ = nn(X)
     return y, ŷ
+end
+
+function get_absolute_error(stats, num_rows)
+    train_mean = stats.train_mean[max(1,end-num_rows+1):end]
+    return mean(train_mean)
 end

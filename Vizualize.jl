@@ -1,7 +1,7 @@
 include("nnviz.jl")
 
 name_list = [
-    "nadam_decay4"
+    "rejection_random_70_big"
 ]
 
 for name in name_list

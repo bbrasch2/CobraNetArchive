@@ -101,4 +101,4 @@ end
 #sampler(n) = make_space_filler(n, oracle, model, binvars, convars, 100, true)
 
 #cache_training_data(10000, 1000, sampler, "cache/rejection")
-mix_cache("cache/rejection", "cache/random10M", "cache/rejection_random_split", 0.9, 425)
+mix_cache("cache/rejection", "cache/random10M", "cache/rejection_random_70", 0.7, 550)
