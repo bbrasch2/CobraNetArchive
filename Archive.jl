@@ -1,9 +1,29 @@
 using Flux, BSON, DataFrames
 
 name_list = [
-    "rejection_decay",
-    "rejection_decay2",
-    "rejection_delta"
+    "nadam_decay",
+    "nadam_decay2",
+    "nadam_decay3",
+    "nadam_decay4",
+    "nadam_decay5",
+    "nadam_decay6",
+    "nadam_decay7",
+    "nadam_decay8",
+    "nadam_decay9",
+    "nadam_lr1",
+    "nadam_lr2",
+    "nadam_lr3",
+    "rejection_nadam",
+    "rejection_nadam2",
+    "rejection_nadam3",
+    "rejection_nadam4",
+    "rejection_nadam10",
+    "rejection_nadam11",
+    "rejection_nadam12",
+    "rejection_nadam13",
+    "rejection_random_70",
+    "rejection_random_70_big",
+    "rejection_random_80"
 ]
 
 for name in name_list

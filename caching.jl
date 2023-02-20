@@ -1,4 +1,6 @@
 using JLD
+using CSV
+using DataFrames
 
 function cache_training_data(n_per_file, n_files, sampler, dir)
     if !endswith(dir, "/")
@@ -70,6 +72,25 @@ function mix_cache(cache_input1, cache_input2, cache_output, mix_ratio, n_files)
         println("Finished file ", string(epoch), " of ", string(n_files))
         flush(stdout)
     end
+end
+
+# Produce a cache file based on a CSV import of a specific format
+function AAs_from_csv(csv_filepath, exch_rxns_filepath, sampler, cache_path)
+    if isfile(cache_path)
+        println("Found file ", cache_path)
+        return
+    end
+
+    data = DataFrame(CSV.File(csv_filepath))
+    binvars = chop.(readlines(exch_rxns_filepath), tail=5)
+    AA_subset = data[!, binvars]
+    binvals = Matrix{Float32}(AA_subset)'
+    
+    X, y = sampler(binvals)
+
+    save(cache_path, "X", X, "y", y)
+    println("Finished file ", cache_path)
+    return
 end
 
 function get_batch(cachedir, n; skip=0)

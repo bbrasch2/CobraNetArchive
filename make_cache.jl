@@ -19,7 +19,20 @@ function make_sample_random(n, oracle, model, binvars, convars)
     X = vcat(binvals, convals)
     X, Y = oracle(X, nothing)
 
-    return X, convert.(Float32, y)
+    return X, convert.(Float32, Y)
+end
+
+function make_sample_from_AA(oracle, model, binvals, convars)
+    ncon = length(convars)
+
+    # Open up all genes
+    convals = ones(Float32, ncon, size(binvals, 2))
+    println(size(binvals))
+    println(size(convals))
+
+    X = vcat(binvals, convals)
+    X, Y = oracle(X, nothing)
+    return X, convert.(Float32, Y)
 end
 
 function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binary=true)
@@ -98,7 +111,7 @@ function generate_mixed_data(n_x, n_y, oracle, model, binvars, convars)
     return X, Y
 end
 
-#sampler(n) = make_space_filler(n, oracle, model, binvars, convars, 100, true)
+sampler(binvals) = make_sample_from_AA(oracle, model, binvals, convars)
 
-#cache_training_data(10000, 1000, sampler, "cache/rejection")
-mix_cache("cache/rejection", "cache/random10M", "cache/rejection_random_70", 0.7, 550)
+AAs_from_csv("exp_data/SSA_aerobic_experimental_data.csv", "iSMU_amino_acid_exchanges.txt", sampler, "cache/from_AA/data.jld")
+#mix_cache("cache/rejection", "cache/random10M", "cache/rejection_random_70", 0.7, 550)

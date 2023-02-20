@@ -261,6 +261,7 @@ end
 # most recently-updated network and an integer representing 
 # the number of epochs to skip
 function get_training_status(hyper,ntotal)
+    println("Getting training status of ", hyper.rundir)
     epoch_path = "runs/" * hyper.rundir * "/epochs/"
     if !isdir(epoch_path)
         # Directory does not exist, so training has not started
@@ -332,6 +333,12 @@ end
 # ---------------- Evaluating Network ----------------
 function evaluate_nn(nn, oracle, model, binvars, convars, n_samples)
     X, y = make_sample_random(n_samples, oracle, model, binvars, convars)
+    ŷ = nn(X)
+    return y, ŷ
+end
+
+function evaluate_nn_cache(nn, n_samples, cachedir)
+    X, y = get_batch(cachedir, n_samples)
     ŷ = nn(X)
     return y, ŷ
 end
