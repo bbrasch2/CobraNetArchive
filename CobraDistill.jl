@@ -32,7 +32,7 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in,
         save_every = 250,  # must be a multiple of test_every
         rundir = rundir_in,
 
-        cached = true,
+        cached = false,
         cachedir = "cache/" * cachedir_in * "/",
         skip_completed_cache = true
     )
@@ -64,7 +64,7 @@ function make_sample_random(n, oracle, model, binvars, convars)
 
     X = vcat(binvals, convals)
 
-    X, Y = oracle(X, nothing)
+    Y = oracle(X)
 
     return X, convert.(Float32, Y)
 end
@@ -317,17 +317,27 @@ function get_stats(name)
     epoch_path = "runs/" * name * "/epochs/"
     max_epoch = 0
     most_recent_saved = ""
-    for bsonfile in readdir(epoch_path)
-        filename = epoch_path * bsonfile
-        epoch = parse(Int, splitext(splitdir(filename)[2])[1])
-        if epoch > max_epoch
-            max_epoch = epoch
-            most_recent_saved = filename
+    
+    if isdir(epoch_path)
+        for bsonfile in readdir(epoch_path)
+            filename = epoch_path * bsonfile
+            epoch = parse(Int, splitext(splitdir(filename)[2])[1])
+            if epoch > max_epoch
+                max_epoch = epoch
+                most_recent_saved = filename
+            end
         end
+    else
+        return nothing
     end
-    bson = BSON.load(most_recent_saved)
-    stats = bson["stats"]
-    return stats
+
+    if isfile(most_recent_saved)
+        bson = BSON.load(most_recent_saved)
+        stats = bson["stats"]
+        return stats
+    else
+        return nothing
+    end
 end
 
 # ---------------- Evaluating Network ----------------
@@ -344,6 +354,10 @@ function evaluate_nn_cache(nn, n_samples, cachedir)
 end
 
 function get_absolute_error(stats, num_rows)
-    train_mean = stats.train_mean[max(1,end-num_rows+1):end]
-    return mean(train_mean)
+    if isnothing(stats)
+        return "DNE"
+    else
+        train_mean = stats.train_mean[max(1,end-num_rows+1):end]
+        return mean(train_mean)
+    end
 end

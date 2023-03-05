@@ -7,19 +7,18 @@ function make_sample_random(n, oracle, model, binvars, convars)
     nbin = length(binvars)
     ncon = length(convars)
 
-    # IN PROGRESS: test sampling binvals with continuous values
-    binvals = rand(Float32, nbin, n) # zeros(Float32, nbin, n)
-    #card_bin = rand(1:nbin, n)
-    #for i = 1:n
-    #    binvals[rand(1:nbin, card_bin[i]),i] .= 1.0
-    #end
+    binvals = zeros(Float32, nbin, n)
+    card_bin = rand(1:nbin, n)
+    for i = 1:n
+        binvals[rand(1:nbin, card_bin[i]),i] .= 1.0
+    end
 
     convals = rand(Float32, ncon, n)
 
     X = vcat(binvals, convals)
-    X, Y = oracle(X, nothing)
+    Y = convert.(Float32, oracle(X))
 
-    return X, convert.(Float32, Y)
+    return X, Y
 end
 
 function make_sample_from_AA(oracle, model, binvals, convars)
@@ -27,12 +26,10 @@ function make_sample_from_AA(oracle, model, binvals, convars)
 
     # Open up all genes
     convals = ones(Float32, ncon, size(binvals, 2))
-    println(size(binvals))
-    println(size(convals))
 
     X = vcat(binvals, convals)
-    X, Y = oracle(X, nothing)
-    return X, convert.(Float32, Y)
+    Y = convert.(Float32, oracle(X))
+    return X, Y
 end
 
 function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binary=true)
@@ -46,7 +43,9 @@ function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binar
     bin_cap = ceil(n / n_bins)
     bin_counts = Int.(zeros(n_bins))
 
+    # Generate data until each bin is filled
     while counter <= n
+        # Generate binvals & convals for n random samples
         convals_temp = rand(Float32, ncon, n)
         if binary
             binvals_temp = zeros(Float32, nbin, n)
@@ -59,15 +58,20 @@ function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binar
         end
 
         X = vcat(binvals_temp, convals_temp)
-        X, Y = oracle(X, nothing)
-        Y = convert.(Float32, Y)
+        Y = convert.(Float32, oracle(X))
 
+        # Loop through the generated sample points
         for i = 1:n
+            # Get bin index
             idx = Int(ceil(Y[i] * n_bins))
+
+            # Avoid idx of 0 in case of small 
+            # negative value from cobra model
             if idx == 0
                 idx += 1
             end
 
+            # Save sample if bin still has room
             if bin_counts[idx] < bin_cap
                 convals[:,counter] = convals_temp[:,i]
                 binvals[:,counter] = binvals_temp[:,i]
@@ -75,43 +79,21 @@ function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binar
                 counter += 1
             end
 
+            # Exit early if all bins are full
             if counter > n
                 break
             end
         end
     end
 
+    # Shuffle sample order before returning
     X = vcat(binvals, convals)
     X = X[:,Random.shuffle(1:end)]
-    X, Y = oracle(X, nothing)
-    Y = convert.(Float32, Y)
-    return X, Y
-end
-
-function generate_space_filled(n, oracle, model)
-    Y = rand(Float32, n)
-    X, Y = oracle(nothing, Y)
-    X = convert.(Float32, X)
-    return X, Y
-end
-
-function generate_mixed_data(n_x, n_y, oracle, model, binvars, convars)
-    nbin = length(binvars)
-    ncon = length(convars)
-
-    binvals = zeros(Float32, nbin, n_x)
-    card_bin = rand(1:nbin, n_x)
-    for i = 1:n_x
-        binvals[rand(1:nbin, card_bin[i]),i] .= 1.0
-    end
-    convals = rand(Float32, ncon, n_x)
-    X = vcat(binvals, convals)
-    Y = rand(Float32, n_y)
-    X, Y = oracle(X, Y)
+    Y = convert.(Float32, oracle(X))
     return X, Y
 end
 
 sampler(binvals) = make_sample_from_AA(oracle, model, binvals, convars)
 
-AAs_from_csv("exp_data/SSA_aerobic_experimental_data.csv", "iSMU_amino_acid_exchanges.txt", sampler, "cache/from_AA/data.jld")
+AAs_from_csv("exp_data/no_AAs.csv", "iSMU_amino_acid_exchanges.txt", sampler, "cache/from_AA/no_AAs_iSSA/no_AAs_iSSA.jld")
 #mix_cache("cache/rejection", "cache/random10M", "cache/rejection_random_70", 0.7, 550)
