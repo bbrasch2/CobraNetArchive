@@ -8,7 +8,8 @@ using Flux, CUDA
 
 include("caching.jl")
 
-function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, learning_rate_in, rundir_in)
+function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, 
+                    learning_rate_in, rundir_in, cachedir_in)
     hyper = (
         widths = widths_in,
         activations = activations_in,
@@ -20,17 +21,20 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, learn
         batch_size = batch_size_in,
         replace_fraction = 0.1,
 
-        optimizer = Flux.ADAM,
+        #optimizer = Flux.ADAM,
+        #optimizer = Flux.ADADelta,
+        optimizer = Flux.NADAM,
         learning_rate = learning_rate_in,
         l1_regularization = 0.0,
         l2_regularization = 0.0,
 
         test_every = 10,
-        save_every = 10,  # must be a multiple of test_every
+        save_every = 250,  # must be a multiple of test_every
         rundir = rundir_in,
 
-        cached = true,
-        cachedir = "cache/space_filler3/"
+        cached = false,
+        cachedir = "cache/" * cachedir_in * "/",
+        skip_completed_cache = true
     )
     return hyper
 end
@@ -60,7 +64,9 @@ function make_sample_random(n, oracle, model, binvars, convars)
 
     X = vcat(binvals, convals)
 
-    return X, convert.(Float32, oracle(X))
+    Y = oracle(X)
+
+    return X, convert.(Float32, Y)
 end
 
 # ---------------- Stats ----------------
@@ -83,7 +89,6 @@ function update_stats!(stats, epoch, ŷ, y, lr; test=false)
         append!(stats, newdf)
     end
 
-    #TODO: throw error if any of these are NaN
     if test
         mean_col = stats.test_mean
         max_col = stats.test_max
@@ -93,8 +98,8 @@ function update_stats!(stats, epoch, ŷ, y, lr; test=false)
     end
 
     row = findfirst(stats.epoch .== epoch)
-    mean_col[row] = mean(abs.(ŷ .- y))
-    max_col[row] = maximum(abs.(ŷ .- y))
+    mean_col[row] = mean(abs.(ŷ - y))
+    max_col[row] = maximum(abs.(ŷ - y))
 end
 
 function make_run_dir(hyper)
@@ -157,9 +162,9 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     n_test = hyper.n_test
     cachedir = hyper.cachedir
 
-    if epoch_skips >= hyper.n_epochs
-        return
-    end
+    #if epoch_skips >= hyper.n_epochs
+    #    return
+    #end
 
     # Before training we need to generate test data (Xtest, ytest)
     # and the first epoch of training data (X, y). During each epoch,
@@ -187,7 +192,9 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     end
 
     ps = params(nn)
-    opt = Flux.Optimiser(hyper.optimizer(), hyper.learning_rate)
+    opt = hyper.optimizer(hyper.learning_rate...)
+    #opt = hyper.optimizer()
+    #opt = Flux.Optimise.Optimiser(hyper.optimizer(), ExpDecay(1, hyper.learning_rate, 1, 0))
 
     # Using both L1 and L2 regularization, but either can be zeroed
     # out using `hyper.l*_regularization`.
@@ -195,11 +202,13 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     l2_norm(x) = sum(abs2, x)
     loss(X, y) = hyper.loss(nn(X), y) + hyper.l1_regularization*sum(l1_norm, ps) + hyper.l2_regularization*sum(l2_norm, ps)
 
-    for skip in 1:epoch_skips
-        if n_replace > 0
-            # insert new samples randomly in the training data
-            locs = Random.randperm(hyper.n_samples)[1:n_replace]
-            X[:,locs], y[locs] = next_batch()
+    if hyper.skip_completed_cache
+        for skip in 1:epoch_skips
+            if n_replace > 0
+                # insert new samples randomly in the training data
+                locs = Random.randperm(hyper.n_samples)[1:n_replace]
+                X[:,locs], y[locs] = next_batch()
+            end
         end
     end
     epoch_start = epoch_skips + 1
@@ -216,11 +225,12 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
 
         data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
         Flux.train!(loss, ps, data, opt)
-        lr = max(opt.os[2].clip, opt.os[2].start * opt.os[2].decay^floor(epoch/opt.os[2].step))
+        lr = -1 #max(opt.os[2].clip, opt.os[2].start * opt.os[2].decay^floor(epoch/opt.os[2].step))
 
         if epoch % hyper.test_every == 0
-            update_stats!(stats, epoch, nn(X), y, lr, test=false)
-            ŷtest = nn(Xtest)
+            ŷ = vec(nn(X)')
+            update_stats!(stats, epoch, ŷ, y, lr, test=false)
+            ŷtest = vec(nn(Xtest)')
             update_stats!(stats, epoch, ŷtest, ytest, lr, test=true)
         end
 
@@ -230,10 +240,19 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
             # needs to be a multiple of `hyper.test_every`.
             save_epoch(epoch_path, epoch, stats, nn, ŷtest, ytest)
         end
+
+        # End training early if any NaN values found while saving
+        if epoch % hyper.save_every == 0 && any(isnan.(ŷtest))
+            println("NaN values found in ŷtest, ending training early.")
+            flush(stdout)
+            break
+        end
     end
 
     if hyper.cached
         close(batch_channel)
+        println("Closed channel")
+        flush(stdout)
     end
 end
 
@@ -242,7 +261,8 @@ end
 # most recently-updated network and an integer representing 
 # the number of epochs to skip
 function get_training_status(hyper,ntotal)
-    epoch_path = "runs/" * hyper.rundir * "/" * "epochs/"
+    println("Getting training status of ", hyper.rundir)
+    epoch_path = "runs/" * hyper.rundir * "/epochs/"
     if !isdir(epoch_path)
         # Directory does not exist, so training has not started
         stats, _, epoch_path = make_stats(hyper)
@@ -272,6 +292,72 @@ function get_training_status(hyper,ntotal)
     stats = bson["stats"]
     #_, epoch_path = make_run_dir(hyper)
     epoch_path = "runs/" * hyper.rundir * "/epochs/"
-    println("Training started, last epoch saved: " * string(max_epoch) * ". Resuming training.")
+    println("Training started, loading network saved at epoch: " * string(max_epoch) * ".")
     return nn, stats, epoch_path, max_epoch
+end
+
+function get_nn(name)
+    epoch_path = "runs/" * name * "/epochs/"
+    max_epoch = 0
+    most_recent_saved = ""
+    for bsonfile in readdir(epoch_path)
+        filename = epoch_path * bsonfile
+        epoch = parse(Int, splitext(splitdir(filename)[2])[1])
+        if epoch > max_epoch
+            max_epoch = epoch
+            most_recent_saved = filename
+        end
+    end
+    bson = BSON.load(most_recent_saved)
+    nn = bson["nn"]
+    return nn
+end
+
+function get_stats(name)
+    epoch_path = "runs/" * name * "/epochs/"
+    max_epoch = 0
+    most_recent_saved = ""
+    
+    if isdir(epoch_path)
+        for bsonfile in readdir(epoch_path)
+            filename = epoch_path * bsonfile
+            epoch = parse(Int, splitext(splitdir(filename)[2])[1])
+            if epoch > max_epoch
+                max_epoch = epoch
+                most_recent_saved = filename
+            end
+        end
+    else
+        return nothing
+    end
+
+    if isfile(most_recent_saved)
+        bson = BSON.load(most_recent_saved)
+        stats = bson["stats"]
+        return stats
+    else
+        return nothing
+    end
+end
+
+# ---------------- Evaluating Network ----------------
+function evaluate_nn(nn, oracle, model, binvars, convars, n_samples)
+    X, y = make_sample_random(n_samples, oracle, model, binvars, convars)
+    ŷ = nn(X)
+    return y, ŷ
+end
+
+function evaluate_nn_cache(nn, n_samples, cachedir)
+    X, y = get_batch(cachedir, n_samples)
+    ŷ = nn(X)
+    return y, ŷ
+end
+
+function get_absolute_error(stats, num_rows)
+    if isnothing(stats)
+        return "DNE"
+    else
+        train_mean = stats.train_mean[max(1,end-num_rows+1):end]
+        return mean(train_mean)
+    end
 end

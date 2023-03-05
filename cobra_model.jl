@@ -1,4 +1,4 @@
-
+using Random
 using Tiger
 using JuMP, Gurobi
 
@@ -24,33 +24,37 @@ function load_cobra(modelfile, varname;
     cobra = extend_cobra_cnf(cobra, ub=gene_ub)
     model = build_base_model(cobra)
     binvars = variable_by_name.(model, exchanges)
-    convars = variable_by_name.(model, genes)   # find label for objective function at end
-                                                # then constrain at specific (random?) value 
-                                                # and minimize binvars
+    convars = variable_by_name.(model, genes)
+    objvars = variable_by_name.(model, "bio00001")
 
-    return model, binvars, convars
+    return model, binvars, convars, objvars
 end
 
 GENE_UB = 1000
 EX_UB = 100 # from CDM.toml
 
-model, binvars, convars = load_cobra(
+model, binvars, convars, objvars = load_cobra(
     "iSMU.mat", "iSMU"; gene_ub=GENE_UB, media_file="CDM.toml", 
     exchanges=readlines("iSMU_amino_acid_exchanges.txt"),
     genes=readlines("iSMU_amino_acid_genes.txt")
 )
+#model, binvars, convars, objvars = load_cobra(
+#    "iSSA.mat", "iSSA"; gene_ub=GENE_UB, media_file="CDM.toml", 
+#    exchanges=readlines("iSMU_amino_acid_exchanges.txt"), genes=nothing
+#)
 
 # ---------------- Oracle building ----------------
 
 nbin = length(binvars)
 ncon = length(convars)
 
-function build_oracle(model, binvars, convars; bin_ub=1.0, con_ub=1.0, normalize=true, copy=true, optimizer=Gurobi.Optimizer, silent=true)
+function build_oracle(model, binvars, convars, objvars; bin_ub=1.0, con_ub=1.0, normalize=true, copy=true, optimizer=Gurobi.Optimizer, silent=true, reverse=false)
     if copy
         model, reference_map = copy_model(model)
         set_optimizer(model, optimizer)
         binvars = reference_map[binvars]
         convars = reference_map[convars]
+        objvars = reference_map[objvars]
     end
 
     vars = vcat(binvars, convars)
@@ -70,18 +74,22 @@ function build_oracle(model, binvars, convars; bin_ub=1.0, con_ub=1.0, normalize
 
     function run_model(X)
         n = size(X, 2)
-        output = zeros(n)
+        x_output = zeros(size(vars, 1), n)
+        y_output = zeros(n)
+
         for i = 1:n
+            # TODO: this is not assigning AA values properly
             set_upper_bound.(vars, ub .* X[:,i])
             optimize!(model)
-            output[i] = objective_value(model) / max_objval
+            x_output[:,i] = X[:,i] 
+            y_output[i] = objective_value(model) / max_objval
         end
-        return output
-    end
 
+        return y_output
+    end
     return run_model
 end
 
-oracle = build_oracle(model, binvars, convars; bin_ub=EX_UB, con_ub=GENE_UB)
+oracle = build_oracle(model, binvars, convars, objvars; bin_ub=EX_UB, con_ub=GENE_UB)
 
 ntotal = nbin + ncon
