@@ -1,7 +1,8 @@
 include("nnviz.jl")
 
 name_list = [
-    "NAdam_CCD_opt"
+    "new_data_test",
+    "new_data_test2"
 ]
 
 for name in name_list

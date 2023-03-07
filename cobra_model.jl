@@ -1,4 +1,3 @@
-using Random
 using Tiger
 using JuMP, Gurobi
 
@@ -9,11 +8,9 @@ function load_cobra(modelfile, varname;
                     media_file="CDM.toml",
                     exchanges=nothing, genes=nothing)
     cobra = read_cobra(modelfile, varname)
+    cobra = extend_cobra_cnf(cobra, ub=gene_ub)
     if remove_ngam
         cobra.lb[cobra.lb .> 0.0] .= 0.0
-    end
-    if !isnothing(media_file)
-        set_media_bounds!(cobra, media_file)
     end
     if isnothing(exchanges)
         exchanges = get_exchange_rxns(cobra)
@@ -21,8 +18,12 @@ function load_cobra(modelfile, varname;
     if isnothing(genes)
         genes = cobra.genes
     end
-    cobra = extend_cobra_cnf(cobra, ub=gene_ub)
     model = build_base_model(cobra)
+
+    if !isnothing(media_file)
+        set_media_bounds!(model, media_file)
+    end
+
     binvars = variable_by_name.(model, exchanges)
     convars = variable_by_name.(model, genes)
     objvars = variable_by_name.(model, "bio00001")
@@ -40,7 +41,8 @@ model, binvars, convars, objvars = load_cobra(
 )
 #model, binvars, convars, objvars = load_cobra(
 #    "iSSA.mat", "iSSA"; gene_ub=GENE_UB, media_file="CDM.toml", 
-#    exchanges=readlines("iSMU_amino_acid_exchanges.txt"), genes=nothing
+#    exchanges=readlines("iSSA_amino_acid_exchanges.txt"), 
+#    genes=nothing
 #)
 
 # ---------------- Oracle building ----------------
@@ -48,7 +50,9 @@ model, binvars, convars, objvars = load_cobra(
 nbin = length(binvars)
 ncon = length(convars)
 
-function build_oracle(model, binvars, convars, objvars; bin_ub=1.0, con_ub=1.0, normalize=true, copy=true, optimizer=Gurobi.Optimizer, silent=true, reverse=false)
+function build_oracle(model, binvars, convars, objvars; bin_ub=1.0, con_ub=1.0, 
+    normalize=true, copy=true, optimizer=Gurobi.Optimizer, silent=true)
+    
     if copy
         model, reference_map = copy_model(model)
         set_optimizer(model, optimizer)
@@ -73,20 +77,19 @@ function build_oracle(model, binvars, convars, objvars; bin_ub=1.0, con_ub=1.0, 
     end
 
     function run_model(X)
-        n = size(X, 2)
-        x_output = zeros(size(vars, 1), n)
-        y_output = zeros(n)
+        num_samples = size(X, 2)
+        output = zeros(num_samples)
 
-        for i = 1:n
-            # TODO: this is not assigning AA values properly
+        for i = 1:num_samples
             set_upper_bound.(vars, ub .* X[:,i])
             optimize!(model)
-            x_output[:,i] = X[:,i] 
-            y_output[i] = objective_value(model) / max_objval
+            #println(primal_status(model))
+            output[i] = objective_value(model) / max_objval
+            #println(output[i])
         end
-
-        return y_output
+        return output
     end
+
     return run_model
 end
 
