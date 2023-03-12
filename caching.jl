@@ -85,7 +85,7 @@ function AAs_from_csv(csv_filepath, exch_rxns_filepath, sampler, cache_path)
     binvars = chop.(readlines(exch_rxns_filepath), tail=5)
     AA_subset = data[!, binvars]
 
-    # TODO: this is a problem line - this loses the positional data of
+    # TODO: this might be problem line - this might lose the positional data of
     # the AAs, which means the oracle just sets the first 20 binvals
     binvals = Matrix{Float32}(AA_subset)'
 

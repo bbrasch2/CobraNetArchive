@@ -29,10 +29,10 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in,
         l2_regularization = 0.0,
 
         test_every = 10,
-        save_every = 10,  # must be a multiple of test_every
+        save_every = 250,  # must be a multiple of test_every
         rundir = rundir_in,
 
-        cached = false,
+        cached = true,
         cachedir = "cache/" * cachedir_in * "/",
         skip_completed_cache = true
     )
@@ -162,10 +162,6 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     n_test = hyper.n_test
     cachedir = hyper.cachedir
 
-    #if epoch_skips >= hyper.n_epochs
-    #    return
-    #end
-
     # Before training we need to generate test data (Xtest, ytest)
     # and the first epoch of training data (X, y). During each epoch,
     # n_replace of the training entries are randomly replaced with 
@@ -192,8 +188,8 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     end
 
     ps = params(nn)
-    opt = hyper.optimizer(hyper.learning_rate)
-    #opt = hyper.optimizer(hyper.learning_rate...)
+    #opt = hyper.optimizer(hyper.learning_rate)
+    opt = hyper.optimizer(hyper.learning_rate...)
     #opt = hyper.optimizer()
     #opt = Flux.Optimise.Optimiser(hyper.optimizer(), ExpDecay(1, hyper.learning_rate, 1, 0))
 

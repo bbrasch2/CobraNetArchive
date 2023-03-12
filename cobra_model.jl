@@ -83,9 +83,7 @@ function build_oracle(model, binvars, convars, objvars; bin_ub=1.0, con_ub=1.0,
         for i = 1:num_samples
             set_upper_bound.(vars, ub .* X[:,i])
             optimize!(model)
-            #println(primal_status(model))
             output[i] = objective_value(model) / max_objval
-            #println(output[i])
         end
         return output
     end

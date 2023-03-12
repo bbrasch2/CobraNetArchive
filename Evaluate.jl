@@ -3,11 +3,11 @@ using Flux
 include("CobraDistill.jl")
 include("nnviz.jl")
 
-cachedir = "cache/from_AA/no_AAs_iSSA/"
-n_samples = 1
+cachedir = "cache/exp_data/"
+n_samples = 3696
 
 name_list = [
-    "NAdam_CCD_opt",
+    "new_data_test",
 ]
 
 for name in name_list

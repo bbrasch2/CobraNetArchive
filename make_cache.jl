@@ -65,10 +65,11 @@ function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binar
             # Get bin index
             idx = Int(ceil(Y[i] * n_bins))
 
-            # Avoid idx of 0 in case of small 
-            # negative value from cobra model
-            if idx == 0
-                idx += 1
+            # Avoid idx of 0 or n_bins+1
+            if idx <= 0
+                idx = 1
+            elseif idx > n_bins
+                idx = n_bins
             end
 
             # Save sample if bin still has room
@@ -93,7 +94,16 @@ function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binar
     return X, Y
 end
 
-sampler(binvals) = make_sample_from_AA(oracle, model, binvals, convars)
+cachedir = "cache/spacefill"
 
-AAs_from_csv("exp_data/no_AAs.csv", "iSMU_amino_acid_exchanges.txt", sampler, "cache/from_AA/no_AAs_iSSA/no_AAs_iSSA.jld")
+# Make cache of random samples
+#sampler(n) = make_space_filler(n, oracle, model, binvars, convars, 10)
+#cache_training_data(10000, 1000, sampler, cachedir)
+
+# Make cache from AAs csv file
+sampler(binvals) = make_sample_from_AA(oracle, model, binvals, convars)
+AAs_from_csv("exp_data/SSA_aerobic_experimental_data.csv", "iSMU_amino_acid_exchanges.txt", 
+    sampler, "cache/exp_data/exp_data.jld")
+
+# Mix two cache dirs
 #mix_cache("cache/rejection", "cache/random10M", "cache/rejection_random_70", 0.7, 550)
