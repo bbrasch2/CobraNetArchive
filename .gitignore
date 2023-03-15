@@ -1,6 +1,7 @@
 *.out
 *.jld
 runs/
+streptoruns/
 cache/
 .venv/
 .vscode/

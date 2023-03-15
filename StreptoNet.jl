@@ -1,5 +1,6 @@
 using Revise
-using Statistics, DataFrames, Random
+using CSV, BSON
+using Statistics, DataFrames, Random, LinearAlgebra
 using Flux, CUDA
 
 # Creates a NamedTuple object of hyperparameters based on input
@@ -12,29 +13,33 @@ using Flux, CUDA
 #   * No regularization
 #   * Validate every 10 epochs
 #   * Save network every 10 epochs
-function make_hyper(widths_in, n_epochs_in, batch_size_in, val_split_in
-    learning_rate_in, rundir_in, datadir_in, cobranetdir_in)
+function make_hyper(widths_in, n_epochs_in, batch_size_in, val_split_in,
+    learning_rate_in, decay_in, decay_start_in, rundir_in, datadir_in, 
+    cobranetdir_in)
     
     hyper = (
         widths = widths_in,
-        activations = fill(elu, length(widths) + 1) # input layer & hidden layers
+        activations = fill(elu, length(widths_in) + 1), # input layer & hidden layers
         loss = Flux.Losses.mse,
 
         n_epochs = n_epochs_in,
-        val_split = val_split_in # proportion of data to be set aside for validation
-        batch_size = batch_size_in
+        val_split = val_split_in, # proportion of data to be set aside for validation
+        batch_size = batch_size_in,
 
         optimizer = Flux.NADAM,
         learning_rate = learning_rate_in,
+        decay = decay_in,
+        decay_start = decay_start_in,
         l1_regularization = 0.0,
         l2_regularization = 0.0,
 
         test_every = 10,
         save_every = 10,  # must be a multiple of test_every
         rundir = rundir_in,
-        datadir = datadir_in
-
-        cobranetdir = cobranetdir_in
+        datadir = datadir_in,
+        cobranetdir = cobranetdir_in,
+        exch_rxns_filepath = "iSMU_amino_acid_exchanges.txt",
+        genes_filepath = "iSMU_amino_acid_genes.txt",
     )
     return hyper
 end
@@ -47,7 +52,7 @@ end
 # directory. The main training loop does not output anything.
 
 function make_run_dir(hyper)
-    runpath = "runs/" * hyper.rundir * "/"
+    runpath = "streptoruns/" * hyper.rundir * "/"
     epochpath = runpath * "epochs/"
     mkpath(epochpath)
     open(runpath * "hyper.txt", "w") do io
@@ -82,9 +87,9 @@ function update_stats!(stats, epoch, ŷ, y, lr; test=false)
     max_col[row] = maximum(abs.(ŷ - y))
 end
 
-function save_epoch(epoch_path, epoch, stats, nn, ŷ, y)
+function save_epoch(epoch_path, epoch, stats, nn, X, ŷ, y, genes)
     bson(epoch_path * string(epoch) * ".bson", Dict("stats" => stats,
-        "nn" => nn, "ŷ" => ŷ, "y" => y))
+        "nn" => nn, "X" => X, "ŷ" => ŷ, "y" => y, "genes" => genes))
 end
 
 # Now we can create the stats DF and the run directory for this 
@@ -126,14 +131,16 @@ function make_nn(hyper, n_inputs, n_outputs)
 end
 
 # ---------------- Neural Net training ----------------
-function train_nn(hyper,nn,stats,datadir,cobranetdir,epoch_path,epoch_skips)
-    # TODO
-    data = nothing # load datadir
-    Xtest = nothing # randomly select hyper.val_split of data
-    ytest = nothing
-    X = nothing# remaining data
-    y = nothing
-    cobranet = nothing # load from cobranetdir
+function train_nn(hyper,nn,stats,epoch_path,epoch_skips)
+    Xdata, ydata = get_data(hyper) # load datadir
+    num_samples = size(Xdata, 2)
+    locs = Random.randperm(num_samples)
+    idx = Int(ceil(num_samples * hyper.val_split))
+    Xtest = Xdata[:,locs[1:idx]]
+    ytest = ydata[locs[1:idx]]
+    X = Xdata[:,locs[idx+1:end]]
+    y = ydata[locs[idx+1:end]]
+    cobranet = get_nn(hyper) # load from cobranetdir
 
     ps = params(nn)
     opt = hyper.optimizer(hyper.learning_rate)
@@ -152,11 +159,140 @@ function train_nn(hyper,nn,stats,datadir,cobranetdir,epoch_path,epoch_skips)
         flush(stdout)
 
         # Randomly shuffle sample order
-        locs = Random.randperm(size(train_data, 2))
+        locs = Random.randperm(size(X, 2))
         X = X[:,locs]
         y = y[locs]
 
         data_load = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
         Flux.train!(loss, ps, data_load, opt)
+
+        if epoch % hyper.test_every == 0
+            genes = nn(X)
+            test_genes = nn(Xtest)
+            ŷ = vec(cobranet(vcat(X,genes))')
+            update_stats!(stats, epoch, ŷ, y, opt.eta, test=false)
+            ŷtest = vec(cobranet(vcat(Xtest,test_genes))')
+            update_stats!(stats, epoch, ŷtest, ytest, opt.eta, test=true)
+        end
+
+        if epoch % hyper.save_every == 0
+            # notice how this relies on ŷtest, which is only computed
+            # every `hyper.test_every` epochs. So `hyper.save_every`
+            # needs to be a multiple of `hyper.test_every`.
+            save_epoch(epoch_path, epoch, stats, nn, Xtest, ŷtest, ytest, test_genes)
+        end
+
+        # Decay learning rate
+        if hyper.decay < 1 && hyper.decay_start < epoch
+            opt.eta = hyper.decay * opt.eta
+        end
+
+        # End training early if any NaN values found while saving
+        if epoch % hyper.save_every == 0 && any(isnan.(ŷtest))
+            println("NaN values found in ŷtest, ending training early.")
+            flush(stdout)
+            break
+        end
     end
+end
+
+# ---------------- Resuming Training ----------------
+# Checks the status of a training protocol and returns the 
+# most recently-updated network and an integer representing 
+# the number of epochs to skip
+function get_training_status(hyper)
+    n_inputs = length(readlines(hyper.exch_rxns_filepath))
+    n_outputs = length(readlines(hyper.genes_filepath))
+    println("Getting training status of ", hyper.rundir)
+    epoch_path = "streptoruns/" * hyper.rundir * "/epochs/"
+    if !isdir(epoch_path)
+        # Directory does not exist, so training has not started
+        stats, _, epoch_path = make_stats(hyper)
+        nn = make_nn(hyper, n_inputs, n_outputs)
+        println("Training not started, initiating training.")
+        return nn, stats, epoch_path, 0
+    end
+    max_epoch = 0
+    most_recent_saved = ""
+    for bsonfile in readdir(epoch_path)
+        filename = epoch_path * bsonfile
+        epoch = parse(Int, splitext(splitdir(filename)[2])[1])
+        if epoch > max_epoch
+            max_epoch = epoch
+            most_recent_saved = filename
+        end
+    end
+    if max_epoch == 0
+        # Output files do not exist, so training has not started
+        stats, _, epoch_path = make_stats(hyper)
+        nn = make_nn(hyper, n_inputs, n_outputs)
+        println("Training not started, initiating training.")
+        return nn, stats, epoch_path, 0
+    end
+    bson = BSON.load(most_recent_saved)
+    nn = bson["nn"]
+    stats = bson["stats"]
+    println("Training started, loading network saved at epoch: " * string(max_epoch) * ".")
+    return nn, stats, epoch_path, max_epoch
+end
+
+function get_nn(hyper)
+    epoch_path = "runs/" * hyper.cobranetdir * "/epochs/"
+    max_epoch = 0
+    most_recent_saved = ""
+    for bsonfile in readdir(epoch_path)
+        filename = epoch_path * bsonfile
+        epoch = parse(Int, splitext(splitdir(filename)[2])[1])
+        if epoch > max_epoch
+            max_epoch = epoch
+            most_recent_saved = filename
+        end
+    end
+    bson = BSON.load(most_recent_saved)
+    nn = bson["nn"]
+    return nn
+end
+
+function get_stats(name)
+    epoch_path = "streptoruns/" * name * "/epochs/"
+    max_epoch = 0
+    most_recent_saved = ""
+    
+    if isdir(epoch_path)
+        for bsonfile in readdir(epoch_path)
+            filename = epoch_path * bsonfile
+            epoch = parse(Int, splitext(splitdir(filename)[2])[1])
+            if epoch > max_epoch
+                max_epoch = epoch
+                most_recent_saved = filename
+            end
+        end
+    else
+        return nothing
+    end
+
+    if isfile(most_recent_saved)
+        bson = BSON.load(most_recent_saved)
+        stats = bson["stats"]
+        return stats
+    else
+        return nothing
+    end
+end
+
+function get_data(hyper)
+    csv_filepath = "exp_data/" * hyper.datadir * ".csv"
+
+    # Load into dataframe
+    data = DataFrame(CSV.File(csv_filepath))
+
+    # Extract inputs
+    binvars = chop.(readlines(hyper.exch_rxns_filepath), tail=5)
+    AA_subset = data[!, binvars]
+    binvals = Matrix{Float32}(AA_subset)'
+
+    # Extract outputs
+    fitness = data[!,"fitness_mean"]
+
+    return binvals, fitness
 end

@@ -1,14 +1,16 @@
 using Flux, BSON, DataFrames
 
 name_list = [
-    "NAdam_opt_5",
-    "NAdam_opt_6",
-    "NAdam_opt_7",
-    "NAdam_opt_8",
-    "NAdam_opt_16",
-    "NAdam_opt_17",
-    "NAdam_opt_optimal",
-    "NAdam_opt_optimal2",
+    "lr2",
+    "lr2_r",
+    "lr3",
+    "lr4",
+    "lr5",
+    "lr5_r",
+    "lr6",
+    "lr6_r",
+    "lr7",
+    "lr7_r",
 ]
 
 for name in name_list

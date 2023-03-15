@@ -9,7 +9,8 @@ using Flux, CUDA
 include("caching.jl")
 
 function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, 
-                    learning_rate_in, rundir_in, cachedir_in)
+                    learning_rate_in, decay_in, decay_start_in, rundir_in, 
+                    cachedir_in)
     hyper = (
         widths = widths_in,
         activations = activations_in,
@@ -24,7 +25,10 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in,
         #optimizer = Flux.ADAM,
         #optimizer = Flux.ADADelta,
         optimizer = Flux.NADAM,
+        #optimizer = Flux.AdaMax,
         learning_rate = learning_rate_in,
+        decay = decay_in,
+        decay_start = decay_start_in,
         l1_regularization = 0.0,
         l2_regularization = 0.0,
 
@@ -188,8 +192,8 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
     end
 
     ps = params(nn)
-    #opt = hyper.optimizer(hyper.learning_rate)
-    opt = hyper.optimizer(hyper.learning_rate...)
+    opt = hyper.optimizer(hyper.learning_rate)
+    #opt = hyper.optimizer(hyper.learning_rate...)
     #opt = hyper.optimizer()
     #opt = Flux.Optimise.Optimiser(hyper.optimizer(), ExpDecay(1, hyper.learning_rate, 1, 0))
 
@@ -222,13 +226,12 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
 
         data = Flux.DataLoader((X, hcat(y)'), batchsize=hyper.batch_size)
         Flux.train!(loss, ps, data, opt)
-        lr = -1 #max(opt.os[2].clip, opt.os[2].start * opt.os[2].decay^floor(epoch/opt.os[2].step))
 
         if epoch % hyper.test_every == 0
             ŷ = vec(nn(X)')
-            update_stats!(stats, epoch, ŷ, y, lr, test=false)
+            update_stats!(stats, epoch, ŷ, y, opt.eta, test=false)
             ŷtest = vec(nn(Xtest)')
-            update_stats!(stats, epoch, ŷtest, ytest, lr, test=true)
+            update_stats!(stats, epoch, ŷtest, ytest, opt.eta, test=true)
         end
 
         if epoch % hyper.save_every == 0
@@ -236,6 +239,11 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
             # every `hyper.test_every` epochs. So `hyper.save_every`
             # needs to be a multiple of `hyper.test_every`.
             save_epoch(epoch_path, epoch, stats, nn, ŷtest, ytest)
+        end
+
+        # Decay learning rate
+        if hyper.decay < 1 && hyper.decay_start < epoch
+            opt.eta = hyper.decay * opt.eta
         end
 
         # End training early if any NaN values found while saving

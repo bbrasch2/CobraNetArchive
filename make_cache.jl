@@ -94,16 +94,16 @@ function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binar
     return X, Y
 end
 
-cachedir = "cache/spacefill"
+#cachedir = "cache/spacefill"
 
 # Make cache of random samples
 #sampler(n) = make_space_filler(n, oracle, model, binvars, convars, 10)
 #cache_training_data(10000, 1000, sampler, cachedir)
 
 # Make cache from AAs csv file
-sampler(binvals) = make_sample_from_AA(oracle, model, binvals, convars)
-AAs_from_csv("exp_data/SSA_aerobic_experimental_data.csv", "iSMU_amino_acid_exchanges.txt", 
-    sampler, "cache/exp_data/exp_data.jld")
+#sampler(binvals) = make_sample_from_AA(oracle, model, binvals, convars)
+#AAs_from_csv("exp_data/SSA_aerobic_experimental_data.csv", "iSMU_amino_acid_exchanges.txt", 
+#    sampler, "cache/exp_data/exp_data.jld")
 
 # Mix two cache dirs
-#mix_cache("cache/rejection", "cache/random10M", "cache/rejection_random_70", 0.7, 550)
+mix_cache("cache/random", "cache/spacefill", "cache/rejection_random_50", 0.5, 710)

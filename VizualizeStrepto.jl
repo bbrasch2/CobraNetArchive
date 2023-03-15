@@ -1,7 +1,7 @@
-include("nnviz.jl")
+include("streptoviz.jl")
 
 name_list = [
-    "split_50_big"
+    "lr3"
 ]
 
 for name in name_list
