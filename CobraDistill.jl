@@ -8,9 +8,9 @@ using Flux, CUDA
 
 include("caching.jl")
 
-function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in, 
-                    learning_rate_in, decay_in, decay_start_in, rundir_in, 
-                    cachedir_in)
+function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in,
+                    optimizer_in, learning_rate_in, decay_in, decay_start_in, 
+                    rundir_in, cachedir_in)
     hyper = (
         widths = widths_in,
         activations = activations_in,
@@ -18,14 +18,15 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in,
 
         n_epochs = n_epochs_in,
         n_samples = 10000,
-        n_test = 1000,
+        n_test = 10000,
         batch_size = batch_size_in,
         replace_fraction = 0.1,
 
         #optimizer = Flux.ADAM,
         #optimizer = Flux.ADADelta,
-        optimizer = Flux.NADAM,
+        #optimizer = Flux.NADAM,
         #optimizer = Flux.AdaMax,
+        optimizer = optimizer_in,
         learning_rate = learning_rate_in,
         decay = decay_in,
         decay_start = decay_start_in,
@@ -33,7 +34,7 @@ function make_hyper(widths_in, activations_in, n_epochs_in, batch_size_in,
         l2_regularization = 0.0,
 
         test_every = 10,
-        save_every = 250,  # must be a multiple of test_every
+        save_every = 1000,  # must be a multiple of test_every
         rundir = rundir_in,
 
         cached = true,
@@ -182,7 +183,7 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
         Xtest, ytest = get_batch(cachedir, n_test)
         X, y = get_batch(cachedir, n_samples; skip=n_test)
         batch_channel = Channel(1)
-        errormonitor(@async serve_batches(batch_channel, cachedir, n_replace, hyper.n_epochs; skip=n_test+n_samples))
+        errormonitor(@async serve_batches(batch_channel, cachedir, n_replace, hyper.n_epochs; skip=n_test+n_samples+epoch_skips))
         next_batch = () -> take!(batch_channel)
     else
         get_samples = (n) -> make_sample_random(n, oracle, model, binvars, convars)
@@ -209,6 +210,11 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
                 # insert new samples randomly in the training data
                 locs = Random.randperm(hyper.n_samples)[1:n_replace]
                 X[:,locs], y[locs] = next_batch()
+            end
+            
+            # Decay learning rate
+            if hyper.decay < 1 && hyper.decay_start < epoch
+                opt.eta = hyper.decay * opt.eta
             end
         end
     end
@@ -355,14 +361,14 @@ end
 function evaluate_nn_cache(nn, n_samples, cachedir)
     X, y = get_batch(cachedir, n_samples)
     ŷ = nn(X)
-    return y, ŷ
+    return vec(y), vec(ŷ)
 end
 
 function get_absolute_error(stats, num_rows)
     if isnothing(stats)
         return "DNE"
     else
-        train_mean = stats.train_mean[max(1,end-num_rows+1):end]
-        return mean(train_mean)
+        test_mean = stats.test_mean[max(1,end-num_rows+1):end]
+        return mean(test_mean)
     end
 end

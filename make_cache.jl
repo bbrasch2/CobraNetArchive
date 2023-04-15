@@ -8,9 +8,9 @@ function make_sample_random(n, oracle, model, binvars, convars)
     ncon = length(convars)
 
     binvals = zeros(Float32, nbin, n)
-    card_bin = rand(1:nbin, n)
+    card_bin = rand(0:nbin, n) # sets random # of binvals to be set to 1.0
     for i = 1:n
-        binvals[rand(1:nbin, card_bin[i]),i] .= 1.0
+        binvals[randperm(nbin)[1:card_bin[i]],i] .= 1.0
     end
 
     convals = rand(Float32, ncon, n)
@@ -94,11 +94,11 @@ function make_space_filler(n, oracle, model, binvars, convars, n_bins=100, binar
     return X, Y
 end
 
-#cachedir = "cache/spacefill"
+cachedir = "cache/spacefill"
 
 # Make cache of random samples
 #sampler(n) = make_space_filler(n, oracle, model, binvars, convars, 10)
-#cache_training_data(10000, 1000, sampler, cachedir)
+#cache_training_data(10000, 2000, sampler, cachedir)
 
 # Make cache from AAs csv file
 #sampler(binvals) = make_sample_from_AA(oracle, model, binvals, convars)
@@ -106,4 +106,6 @@ end
 #    sampler, "cache/exp_data/exp_data.jld")
 
 # Mix two cache dirs
-mix_cache("cache/random", "cache/spacefill", "cache/rejection_random_50", 0.5, 710)
+for i in 0:0.1:1
+    mix_cache("cache/random", "cache/spacefill", "cache/rejection_random_" * string(Int(i * 100)), i, 1000)
+end

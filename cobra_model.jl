@@ -35,7 +35,7 @@ GENE_UB = 1000
 EX_UB = 100 # from CDM.toml
 
 model, binvars, convars, objvars = load_cobra(
-    "iSMU.mat", "iSMU"; gene_ub=GENE_UB, media_file="CDM.toml", 
+    "iSMU_rescaled.mat", "rescaled_model"; gene_ub=GENE_UB, media_file="CDM.toml", 
     exchanges=readlines("iSMU_amino_acid_exchanges.txt"),
     genes=readlines("iSMU_amino_acid_genes.txt")
 )
@@ -58,7 +58,9 @@ function build_oracle(model, binvars, convars, objvars; bin_ub=1.0, con_ub=1.0,
         set_optimizer(model, optimizer)
         binvars = reference_map[binvars]
         convars = reference_map[convars]
-        objvars = reference_map[objvars]
+        if objvars != nothing
+            objvars = reference_map[objvars]
+        end
     end
 
     vars = vcat(binvars, convars)

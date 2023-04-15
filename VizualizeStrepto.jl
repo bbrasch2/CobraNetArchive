@@ -1,7 +1,7 @@
 include("streptoviz.jl")
 
 name_list = [
-    "lr3"
+    "dropout"
 ]
 
 for name in name_list

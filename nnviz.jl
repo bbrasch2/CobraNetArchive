@@ -10,9 +10,9 @@ ENV["GKSwstype"] = "100"
 function save_test_train(stats, filename)
     p_train = plot(stats.epoch, hcat(stats.train_mean, stats.train_max),
         label=["Average" "Max"], legend=:left, xlabel="Epoch", 
-        ylabel="Train Error", ylims=(0, 1)) #, yaxis=:log)
+        ylabel="Train Error", yaxis=:log) # ylims=(0, 1)
     p_test = plot(stats.epoch, hcat(stats.test_mean, stats.test_max), 
-        legend=false, xlabel="Epoch", ylabel="Test Error", ylims=(0, 1)) #, yaxis=:log)
+        legend=false, xlabel="Epoch", ylabel="Test Error", yaxis=:log) # ylims=(0, 1)
     plot!(p_train, p_test)
     savefig(filename)
 end
@@ -20,20 +20,18 @@ end
 function save_orderplot(ŷ, y, filename, epoch)
     I = sortperm(y)
     plot_title = "Epoch: " * epoch
-    plot(1:length(y), hcat(y[I], ŷ[I]), label=["Actual" "Predicted"], 
-        legend=:bottomright, xlabel="Sample", ylabel=("Fitness"), ylims=(-0.1, 1.1),
-        title=plot_title)
+    plot(1:length(y), y[I], label="Actual", legend=:bottomright, xlabel="Sample", 
+        ylabel=("Fitness"), ylims=(-0.1, 1.1), title=plot_title)
+    scatter!(1:length(y), ŷ[I], seriestype=:scatter, label="Predicted", ms=3, msw=0.4)
     savefig(filename)
 end
 
 function save_lrplot(stats, filename)
-    if "learning_rate" in names(stats)
-        lr = stats.learning_rate
-        lr[lr.<=0] .= NaN
-        plot(stats.epoch, lr, legend=false, xlabel="Epoch", ylabel="Learning Rate", 
-        yaxis=:log)
-        savefig(filename)
-    end
+    lr = stats.learning_rate
+    lr[lr.<=0] .= NaN
+    plot(stats.epoch, lr, legend=false, xlabel="Epoch", ylabel="Learning Rate", 
+    yaxis=:log)
+    savefig(filename)
     
 end
 

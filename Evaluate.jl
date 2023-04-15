@@ -3,92 +3,12 @@ using Flux
 include("CobraDistill.jl")
 include("nnviz.jl")
 
-cachedir = "cache/exp_data/"
-n_samples = 3696
+cachedir = "cache/rejection_random_0/"
+n_samples = 10000
 
 name_list = [
-    "NAdam_CCD_1_1",
-    "NAdam_CCD_2_1",
-    "NAdam_CCD_3_1",
-    "NAdam_CCD_4_1",
-    "NAdam_CCD_5_1",
-    "NAdam_CCD_6_1",
-    "NAdam_CCD_7_1",
-    "NAdam_CCD_8_1",
-    "NAdam_CCD_9_1",
-    "NAdam_CCD_10_1",
-    "NAdam_CCD_11_1",
-    "NAdam_CCD_12_1",
-    "NAdam_CCD_13_1",
-    "NAdam_CCD_14_1",
-    "NAdam_CCD_15_1",
-    "NAdam_CCD_16_1",
-    "NAdam_CCD_17_1",
-    "NAdam_CCD_18_1",
-    "NAdam_CCD_19_1",
-    "NAdam_CCD_20_1",
-    "NAdam_CCD_21_1",
-    "NAdam_CCD_22_1",
-    "NAdam_CCD_23_1",
-    "NAdam_CCD_24_1",
-    "NAdam_CCD_25_1",
-    "NAdam_CCD_26_1",
-    "NAdam_CCD_27_1",
-    "NAdam_CCD_28_1",
-    "NAdam_CCD_29_1",
-    "NAdam_CCD_30_1",
-    "NAdam_CCD_31_1",
-    "NAdam_CCD_32_1",
-    "NAdam_CCD_33_1",
-    "NAdam_CCD_34_1",
-    "NAdam_CCD_35_1",
-    "NAdam_CCD_36_1",
-    "NAdam_CCD_37_1",
-    "NAdam_CCD_38_1",
-    "NAdam_CCD_39_1",
-    "NAdam_CCD_40_1",
-    "NAdam_CCD_41_1",
-    "NAdam_CCD_42_1",
-    "NAdam_CCD_43_1",
-    "NAdam_CCD_44_1",
-    "NAdam_CCD_45_1",
-    "NAdam_CCD_46_1",
-    "NAdam_CCD_47_1",
-    "NAdam_CCD_48_1",
-    "NAdam_CCD_49_1",
-    "NAdam_CCD_50_1",
-    "NAdam_CCD_51_1",
-    "NAdam_CCD_52_1",
-    "NAdam_CCD_53_1",
-    "NAdam_CCD_1_2",
-    "NAdam_CCD_2_2",
-    "NAdam_CCD_3_2",
-    "NAdam_CCD_4_2",
-    "NAdam_CCD_5_2",
-    "NAdam_CCD_6_2",
-    "NAdam_CCD_7_2",
-    "NAdam_CCD_8_2",
-    "NAdam_CCD_9_2",
-    "NAdam_CCD_10_2",
-    "NAdam_CCD_11_2",
-    "NAdam_CCD_12_2",
-    "NAdam_CCD_13_2",
-    "NAdam_CCD_14_2",
-    "NAdam_CCD_15_2",
-    "NAdam_CCD_16_2",
-    "NAdam_CCD_17_2",
-    "NAdam_CCD_18_2",
-    "NAdam_CCD_19_2",
-    "NAdam_CCD_20_2",
-    "NAdam_CCD_21_2",
-    "NAdam_CCD_22_2",
-    "NAdam_CCD_23_2",
-    "NAdam_CCD_24_2",
-    "NAdam_CCD_25_2",
-    "NAdam_CCD_26_2",
-    "NAdam_CCD_27_2",
-    "NAdam_CCD_28_2",
-    "NAdam_CCD_29_2",
+    "hypertest_lr_0.005_decay_0.999_start_1000",
+    "full_optimal"
 ]
 
 for name in name_list
@@ -96,6 +16,7 @@ for name in name_list
     #model, binvars, convars, oracle, nbin, ncon, ntotal = load_cobra_model()
     #nn = get_nn(name)
     #y, ŷ = evaluate_nn_cache(nn, n_samples, cachedir)
+    #println(mean(abs.(ŷ - y)))
     
     #output_file =  open("cobra_" * name * ".out", "a")
     #write.([output_file], string.(y) .* "\n")
@@ -110,3 +31,13 @@ for name in name_list
     stats = get_stats(name)
     println(get_absolute_error(stats, 10))
 end
+
+#for lr in [1e-2, 5e-3, 1e-3, 5e-4, 1e-4]
+#    for decay in [0.99, 0.995, 0.999, 0.9995, 0.9999]
+#        name = "lr_" * string(lr) * "_decay_" * string(decay)
+#        
+#        # Calculate mean absolute error
+#        stats = get_stats(name)
+#        println(get_absolute_error(stats, 10))
+#    end
+#end

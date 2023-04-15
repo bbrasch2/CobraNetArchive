@@ -1,7 +1,7 @@
 include("nnviz.jl")
 
 name_list = [
-    "split_50_big"
+    "lr_decay_optimal2"
 ]
 
 for name in name_list

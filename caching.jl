@@ -21,6 +21,9 @@ function cache_training_data(n_per_file, n_files, sampler, dir)
     end
 end
 
+# Mix 2 cache dirs at the following ratio:
+# cache_input1 : cache_input2 
+# mix_ratio    : (1 - mix_ratio)
 function mix_cache(cache_input1, cache_input2, cache_output, mix_ratio, n_files)
     # Validate inputs
     if !endswith(cache_output, "/")

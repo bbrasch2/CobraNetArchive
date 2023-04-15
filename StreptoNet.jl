@@ -14,8 +14,8 @@ using Flux, CUDA
 #   * Validate every 10 epochs
 #   * Save network every 10 epochs
 function make_hyper(widths_in, n_epochs_in, batch_size_in, val_split_in,
-    learning_rate_in, decay_in, decay_start_in, rundir_in, datadir_in, 
-    cobranetdir_in)
+    optimizer_in, learning_rate_in, decay_in, decay_start_in, l1_in, l2_in, 
+    dropout_in, rundir_in, datadir_in, cobranetdir_in)
     
     hyper = (
         widths = widths_in,
@@ -26,15 +26,16 @@ function make_hyper(widths_in, n_epochs_in, batch_size_in, val_split_in,
         val_split = val_split_in, # proportion of data to be set aside for validation
         batch_size = batch_size_in,
 
-        optimizer = Flux.NADAM,
+        optimizer = optimizer_in,
         learning_rate = learning_rate_in,
         decay = decay_in,
         decay_start = decay_start_in,
-        l1_regularization = 0.0,
-        l2_regularization = 0.0,
+        l1_regularization = l1_in,
+        l2_regularization = l2_in,
+        dropout = dropout_in,
 
         test_every = 10,
-        save_every = 10,  # must be a multiple of test_every
+        save_every = 250,  # must be a multiple of test_every
         rundir = rundir_in,
         datadir = datadir_in,
         cobranetdir = cobranetdir_in,
@@ -122,9 +123,10 @@ end
 function make_nn(hyper, n_inputs, n_outputs)
     pushfirst!(hyper.widths, n_inputs)
     push!(hyper.widths, n_outputs)
-    layers = Vector{Any}(undef, length(hyper.activations))
+    layers = Vector{Any}(undef, length(hyper.activations) * 2)
     for i = 1:length(hyper.widths)-1
-        layers[i] = Dense(hyper.widths[i], hyper.widths[i+1], hyper.activations[i])
+        layers[i*2-1] = Dense(hyper.widths[i], hyper.widths[i+1], hyper.activations[i])
+        layers[i*2] = Dropout(hyper.dropout)
     end
     nn = Chain(layers...)
     return nn
@@ -295,4 +297,14 @@ function get_data(hyper)
     fitness = data[!,"fitness_mean"]
 
     return binvals, fitness
+end
+
+function get_absolute_error(stats, num_rows)
+    if isnothing(stats)
+        return "DNE", "DNE"
+    else
+        train_mean = mean(stats.train_mean[max(1,end-num_rows+1):end])
+        test_mean = mean(stats.test_mean[max(1,end-num_rows+1):end])
+        return train_mean, test_mean
+    end
 end
