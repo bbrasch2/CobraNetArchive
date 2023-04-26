@@ -1,4 +1,4 @@
-using Plots
+using Plots, ChainPlots
 using DataFrames
 using Flux
 using BSON
@@ -34,7 +34,12 @@ function save_lrplot(stats, filename)
     savefig(filename)
 end
 
-function create_run_plots(name; plot_lr=true)
+function save_nn(nn, title, filename)
+    plot(nn, title=title)
+    savefig(filename)
+end
+
+function create_run_plots(name; plot_lr=true, plot_nn=true)
     rundir = "streptoruns/" * name * "/"
     epochdir = rundir * "epochs/"
     imgdir = rundir * "img/"
@@ -65,6 +70,10 @@ function create_run_plots(name; plot_lr=true)
         save_test_train(stats, imgdir * epoch * "_test_train.png")
         if plot_lr
             save_lrplot(stats, imgdir * epoch * "_lrplot.png")
+        end
+        if plot_nn
+            nn = bson["nn"]
+            save_nn(nn, name, imgdir * epoch * "_nn.png")
         end
         save_orderplot(ŷ, y, imgdir * epoch * "_orderplot.png", string(epoch))
     end

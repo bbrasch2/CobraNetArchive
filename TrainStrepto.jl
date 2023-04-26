@@ -4,13 +4,7 @@ include("StreptoNet.jl")
 include("streptoviz.jl")
 
 hyper_list = [
-    #make_hyper([64, 32, 16], 1000, 1, 0.1, 1e-3, 0.99, 0, 1e-4, 1e-5, 0.25, "dropout", "SSA_aerobic_experimental_data", "full_optimal"),
-    #make_hyper([64, 32, 16], 1000, 1, 0.1, 1e-3, 0.99, 0, 1e-4, 1e-5, 0.1, "dropout_less", "SSA_aerobic_experimental_data", "full_optimal"),
-    #make_hyper([64, 32, 16], 1000, 1, 0.1, 1e-3, 0.99, 0, 0, 0, 0.1, "dropout_less_noreg", "SSA_aerobic_experimental_data", "full_optimal"),
-    make_hyper([16, 16, 16], 1000, 1, 0.1, 1e-3, 0.99, 0, 1e-4, 1e-5, 0, "small", "SSA_aerobic_experimental_data", "full_optimal"),
-    make_hyper([16, 16, 16], 1000, 1, 0.1, 1e-3, 0.99, 0, 1e-4, 1e-5, 0.1, "small_dropout", "SSA_aerobic_experimental_data", "full_optimal"),
-    make_hyper([32, 32, 32], 1000, 1, 0.1, 1e-3, 0.99, 0, 1e-4, 1e-5, 0, "medium", "SSA_aerobic_experimental_data", "full_optimal"),
-    make_hyper([32, 32, 32], 1000, 1, 0.1, 1e-3, 0.99, 0, 1e-4, 1e-5, 0.1, "medium_dropout", "SSA_aerobic_experimental_data", "full_optimal"),
+    make_hyper([64, 32, 16, 8], 1000, 8, 0.1, Flux.ADAM, 1e-3, 0.995, 100, 1e-5, 1e-5, 0.1, "relu_test", "SSA_aerobic_experimental_data", "hypertest_lr_0.005_decay_0.999_start_1000"),
 ]
 
 for hyper in hyper_list

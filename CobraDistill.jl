@@ -213,7 +213,7 @@ function train_nn(hyper,nn,oracle,model,binvars,convars,stats,epoch_path,epoch_s
             end
             
             # Decay learning rate
-            if hyper.decay < 1 && hyper.decay_start < epoch
+            if hyper.decay < 1 && hyper.decay_start < skip
                 opt.eta = hyper.decay * opt.eta
             end
         end

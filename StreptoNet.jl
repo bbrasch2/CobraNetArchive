@@ -13,13 +13,13 @@ using Flux, CUDA
 #   * No regularization
 #   * Validate every 10 epochs
 #   * Save network every 10 epochs
-function make_hyper(widths_in, n_epochs_in, batch_size_in, val_split_in,
+function make_hyper(widths_in, out_activation, n_epochs_in, batch_size_in, val_split_in,
     optimizer_in, learning_rate_in, decay_in, decay_start_in, l1_in, l2_in, 
     dropout_in, rundir_in, datadir_in, cobranetdir_in)
     
     hyper = (
         widths = widths_in,
-        activations = fill(elu, length(widths_in) + 1), # input layer & hidden layers
+        activations = [fill(elu, length(widths_in))..., out_activation], # input layer & hidden layers
         loss = Flux.Losses.mse,
 
         n_epochs = n_epochs_in,

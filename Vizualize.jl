@@ -1,7 +1,7 @@
 include("nnviz.jl")
 
 name_list = [
-    "lr_decay_optimal2"
+    "hypertest_lr_0.005_decay_0.999_start_1000"
 ]
 
 for name in name_list

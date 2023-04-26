@@ -6,3 +6,4 @@ cache/
 .venv/
 .vscode/
 exp_data/
+gene_predictions/

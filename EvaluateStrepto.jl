@@ -1,7 +1,9 @@
 include("StreptoNet.jl")
 
 name_list = [
-    "decay_0.99"
+    "hypertest_lr_0.001_decay_0.995_start_100_l1_1.0e-5_l2_1.0e-5_dropout_0.1",
+    "sigmoid_test",
+    "relu_test"
 ]
 
 for name in name_list
